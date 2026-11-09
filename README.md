@@ -28,32 +28,82 @@
 
 ---
 
-## 1. รันในเครื่อง
+## 1. รันในเครื่อง (Quick start)
 
-ต้องมี Python 3.12 และ PostgreSQL
+**สิ่งที่ต้องมี:** Python 3.12, PostgreSQL (และรหัสผ่านของ user `postgres`), Git
 
-```bash
+ทุกคำสั่งรันที่ **โฟลเดอร์หลักของโปรเจกต์** (โฟลเดอร์ที่มีไฟล์ README.md นี้)
+
+### ขั้นที่ 1: ติดตั้ง (ทำครั้งเดียว)
+
+```powershell
+git clone https://github.com/MrBeam67/Flood-forecasting-using-Traffy-and-ML.git
+cd Flood-forecasting-using-Traffy-and-ML
+
 python -m venv .venv
-.venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
+.venv\Scripts\Activate.ps1
 pip install -r backend/requirements.txt
-copy .env.example .env            # แล้วแก้ DATABASE_URL ให้เป็นรหัสผ่าน postgres ของคุณ
 ```
 
-สร้างฐานข้อมูล (ใช้ pgAdmin หรือ psql ก็ได้):
+> ถ้า PowerShell ขึ้นข้อความว่า *running scripts is disabled* ให้รันคำสั่งนี้ก่อน 1 ครั้ง
+> `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+> ถ้าใช้ cmd ให้รัน `.venv\Scripts\activate.bat` / ถ้าใช้ Git Bash, macOS หรือ Linux ให้รัน `source .venv/Scripts/activate` (macOS/Linux ใช้ `.venv/bin/activate`)
+>
+> ถ้า activate สำเร็จ ข้างหน้าบรรทัดคำสั่งจะมีคำว่า `(.venv)`
 
-```sql
-CREATE DATABASE flood_tungkhru;
-```
+### ขั้นที่ 2: สร้างฐานข้อมูลและไฟล์ `.env` (ทำครั้งเดียว)
 
-สร้างตาราง ใส่ข้อมูลตัวอย่าง แล้วรัน server:
+1. เปิด **pgAdmin** แล้วคลิกขวาที่ Databases → Create → Database ตั้งชื่อว่า `flood_tungkhru`
+   (หรือใช้คำสั่ง `"C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -c "CREATE DATABASE flood_tungkhru;"`)
+2. Copy ไฟล์ตั้งค่า:
+   ```powershell
+   copy .env.example .env
+   ```
+3. เปิดไฟล์ `.env` แล้วแก้ `YOUR_PASSWORD` เป็นรหัสผ่าน postgres ของคุณ
+   ```
+   DATABASE_URL=postgresql://postgres:รหัสผ่าน@localhost:5432/flood_tungkhru
+   ```
+   ถ้ารหัสผ่านมีอักขระพิเศษ เช่น `@ # / :` ต้องเขียนแบบ URL-encode เช่น `@` → `%40`
+4. ถ้าจะทดสอบโดยปักหมุดนอกเขตทุ่งครุ ให้ตั้ง `ENFORCE_BOUNDARY=false`
 
-```bash
+### ขั้นที่ 3: สร้างตาราง (ทำครั้งแรก และทุกครั้งที่ pull โค้ดที่มี migration ใหม่)
+
+```powershell
 alembic -c backend/alembic.ini upgrade head
-python -m backend.scripts.seed_demo --n 120      # ไม่ใส่ก็ได้; ลบออกด้วย --clear
+```
+
+ถ้าขึ้นข้อความว่า `Running upgrade -> 0001, create reports table` แปลว่าสำเร็จ
+
+### ขั้นที่ 4: ใส่ข้อมูลตัวอย่าง (ไม่ทำก็ได้)
+
+```powershell
+python -m backend.scripts.seed_demo --n 120     # สุ่มรายงานปลอม 120 จุดในเขตทุ่งครุ
+python -m backend.scripts.seed_demo --clear     # ลบข้อมูลตัวอย่างออก
+```
+
+### ขั้นที่ 5: รัน server
+
+```powershell
 uvicorn backend.app.main:app --reload
 ```
 
-เปิด http://localhost:8000 ส่วนเอกสาร API อยู่ที่ http://localhost:8000/docs
+- หน้าเว็บ: http://localhost:8000
+- เอกสาร API (ทดลองยิง API ได้): http://localhost:8000/docs
+- กด `Ctrl + C` เพื่อหยุด server
+
+ครั้งต่อไปทำแค่ 2 คำสั่ง: `.venv\Scripts\Activate.ps1` แล้วตามด้วย `uvicorn backend.app.main:app --reload`
+
+### ปัญหาที่เจอบ่อย
+
+| อาการ | วิธีแก้ |
+|---|---|
+| `password authentication failed` | รหัสผ่านใน `.env` ผิด |
+| `database "flood_tungkhru" does not exist` | ยังไม่ได้ทำขั้นที่ 2 ข้อ 1 |
+| `relation "reports" does not exist` | ยังไม่ได้รันขั้นที่ 3 |
+| `ModuleNotFoundError: backend` | ไม่ได้รันคำสั่งจากโฟลเดอร์หลักของโปรเจกต์ |
+| `'uvicorn' is not recognized` | ยังไม่ได้ activate `.venv` |
+| ป้ายบนเว็บขึ้นว่า "โมเดลทดสอบ" | ปกติ ยังไม่มีไฟล์ `backend/models/flood_cls.onnx` (ดูหัวข้อ 3) |
+| ส่งรายงานแล้วขึ้น "พิกัดอยู่นอกเขตทุ่งครุ" | ปักหมุดในกรอบสีน้ำเงิน หรือตั้ง `ENFORCE_BOUNDARY=false` |
 
 ## 2. API
 
