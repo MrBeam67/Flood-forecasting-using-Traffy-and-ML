@@ -1,0 +1,115 @@
+# =====================================================================
+# config.yaml — ค่าตั้งค่าทั้งหมดของระบบแผนที่ความเสี่ยงน้ำท่วมเขตทุ่งครุ
+# แก้ไขค่าที่นี่ได้โดยไม่ต้องแก้โค้ด (path ทั้งหมดอ้างอิงจากโฟลเดอร์โปรเจกต์)
+# =====================================================================
+
+district:
+  name_th: "เขตทุ่งครุ"
+  # คำค้นสำหรับ OSM (osmnx.geocode_to_gdf) — ลองตามลำดับ
+  osm_queries:
+    - "Thung Khru District, Bangkok, Thailand"
+    - "เขตทุ่งครุ, กรุงเทพมหานคร"
+  # ชื่อใน GADM level 2 (ใช้เป็นแผนสำรอง)
+  gadm_name: "Thung Khru"
+  center: [13.61, 100.50]        # [lat, lng] จุดเริ่มต้นแผนที่
+  default_zoom: 14
+  # บัฟเฟอร์ (เมตร) ที่ยอมรับเมื่อตรวจว่าพิกัดอยู่ในเขต (เผื่อ GPS คลาดเคลื่อน)
+  boundary_tolerance_m: 30
+
+crs:
+  metric: "EPSG:32647"           # UTM 47N ใช้คำนวณระยะ/พื้นที่
+  display: "EPSG:4326"           # WGS84 สำหรับแสดงผลบนเว็บ
+
+paths:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  # ไฟล์ FABDEM ที่ผู้ใช้วางเอง (glob) — ใช้ไฟล์แรกที่พบ
+  dem_glob: "data/raw/*FABDEM*.tif"
+  traffy_excel: "data/raw/Flood_report_TraffyFondue.xlsx"
+  traffy_sheet: "teamchadchart"
+  # แผนสำรองถ้าดึง OSM ไม่ได้
+  canals_fallback: "data/raw/canals_thungkhru.gpkg"
+  # กริดจาก QGIS (ถ้ามี) ใช้ตรวจเทียบ และดึงปัจจัยเสริม bcr (สัดส่วนพื้นที่อาคาร)
+  qgis_grid: "QGIS/product/grid_final.geojson"
+  boundary: "data/processed/boundary.geojson"
+  grid_metric: "data/processed/grid_32647.gpkg"
+  grid_display: "data/processed/grid_4326.geojson"
+  traffy_points: "data/processed/traffy_reports.geojson"
+  rain_cache_dir: "data/processed/rain_cache"
+
+grid:
+  cell_size_m: 100
+  # จุดเริ่ม (มุมซ้ายบน x, y ใน EPSG:32647) — ตั้งให้ตรงกับกริด QGIS เดิมเพื่อเทียบผลได้
+  # ใส่ "auto" เพื่อใช้มุมซ้ายบนของขอบเขตปัดเป็นทวีคูณของ cell_size
+  origin: [658998.1746, 1510980.0203]
+  # ตัด cell ที่มีพื้นที่ในเขตน้อยกว่าสัดส่วนนี้ทิ้ง (เศษขอบ)
+  min_area_fraction: 0.05
+
+features:
+  # รัศมี (เมตร) สำหรับหาค่าความสูงมัธยฐานรอบข้าง → relative elevation
+  relative_elev_radius_m: 500
+  # ประเภท waterway ของ OSM ที่นับเป็น "คลอง"
+  waterway_types: ["canal", "river", "stream", "drain", "ditch"]
+
+rainfall:
+  provider: "open_meteo"          # open_meteo | manual (เพิ่ม bma_station ภายหลังได้)
+  open_meteo:
+    forecast_url: "https://api.open-meteo.com/v1/forecast"
+    archive_url: "https://archive-api.open-meteo.com/v1/archive"
+    timezone: "Asia/Bangkok"
+    past_days: 3
+    forecast_days: 2
+    timeout_s: 20
+    cache_minutes: 30
+
+# ---------------------- เฟส 2 ----------------------
+risk:
+  # น้ำหนักแต่ละปัจจัย (จะถูก normalize ให้รวม = 1 อัตโนมัติ)
+  weights:
+    relative_elevation: 0.30     # ต่ำกว่ารอบข้าง = เสี่ยงมาก
+    elevation: 0.15              # ความสูงสัมบูรณ์ต่ำ = เสี่ยงมาก
+    canal_distance: 0.15         # ใกล้คลอง = เสี่ยงมาก (น้ำล้นตลิ่ง/หนุน)
+    complaint_history: 0.20      # เคยมีเรื่องร้องเรียนน้ำท่วม
+    rainfall: 0.20               # ฝนเทียบความจุระบาย
+    impervious: 0.0              # สัดส่วนพื้นที่อาคาร (bcr จาก QGIS) — 0 = ปิด
+  canal_distance_decay_m: 300    # ระยะที่ความเสี่ยงจากคลองลดเหลือ ~37%
+  complaint_saturation: 3        # จำนวนร้องเรียนที่ถือว่าเสี่ยงเต็ม 1.0
+
+depth_model:
+  drainage_capacity_mm_per_hr: 60   # ความจุระบายน้ำออกแบบของ กทม. (โดยประมาณ)
+  runoff_coefficient: 0.8           # สัดส่วนฝนที่กลายเป็นน้ำผิวดิน (เมือง)
+  duration_hr: 3                    # ช่วงเวลาฝนที่ใช้คำนวณ
+  photo_weight: 0.7                 # น้ำหนักความลึกจากภาพจริงเมื่อมีรายงานล่าสุด
+  photo_max_age_hr: 24              # รายงานภาพที่ใหม่กว่านี้จึงนำมาใช้
+
+pumps:
+  max_flood_area_m2: 10000
+  target_drain_hr: 6
+  # ตารางขนาดปั๊ม (อัตราสูบสูงสุดโดยประมาณ m³/h) — ปรับตามอุปกรณ์จริงของเขต
+  catalog:
+    - { name: "ปั๊มหอยโข่ง 4 นิ้ว",  capacity_m3h: 100 }
+    - { name: "ปั๊มหอยโข่ง 6 นิ้ว",  capacity_m3h: 250 }
+    - { name: "ปั๊มหอยโข่ง 8 นิ้ว",  capacity_m3h: 450 }
+    - { name: "ปั๊มหอยโข่ง 12 นิ้ว", capacity_m3h: 900 }
+    - { name: "รถสูบน้ำเคลื่อนที่",  capacity_m3h: 1800 }
+
+# ---------------------- เฟส 3 ----------------------
+severity:
+  # class: [ชื่อ, ความลึกต่ำสุด cm, ความลึกสูงสุด cm, ค่าตัวแทน cm]
+  classes:
+    0: { label: "ไม่ท่วม",                 min_cm: 0,  max_cm: 0,   rep_cm: 0 }
+    1: { label: "<10 ซม. (ข้อเท้า)",        min_cm: 0,  max_cm: 10,  rep_cm: 7 }
+    2: { label: "10–30 ซม. (ใต้เข่า/ขอบล้อ)", min_cm: 10, max_cm: 30,  rep_cm: 20 }
+    3: { label: "30–50 ซม. (เข่า–ต้นขา)",    min_cm: 30, max_cm: 50,  rep_cm: 40 }
+    4: { label: ">50 ซม. (เอว/ประตูรถ)",     min_cm: 50, max_cm: 999, rep_cm: 65 }
+  score_full_cm: 60               # score = min(depth_cm / 60, 1)
+  # คำในข้อความร้องเรียน Traffy → ความลึก (cm) ใช้เป็นเฉลยโดยประมาณ
+  text_keywords_cm:
+    "ข้อเท้า": 7
+    "ฟุตบาท": 15
+    "ขอบทาง": 15
+    "หน้าแข้ง": 20
+    "ครึ่งแข้ง": 20
+    "เข่า": 40
+    "ต้นขา": 45
+    "เอว": 65
