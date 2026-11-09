@@ -1,0 +1,22 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: flood-tungkhru
+    runtime: docker
+    plan: free            # switch to "starter" around demo day to avoid cold starts
+    region: singapore
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL       # Supabase -> Connect -> Session pooler URI (IPv4)
+        sync: false
+      - key: STORAGE_BACKEND
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: flood-images
+      - key: ENFORCE_BOUNDARY
+        value: "true"

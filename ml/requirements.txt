@@ -1,0 +1,6 @@
+# Training only (heavy). The backend does NOT need these.
+# For an NVIDIA GPU, install the CUDA build of PyTorch FIRST, e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+ultralytics>=8.3,<9
+onnx>=1.16
+onnxslim

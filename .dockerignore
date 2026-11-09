@@ -1,0 +1,6 @@
+.venv
+.git
+ml
+uploads
+**/__pycache__
+.env

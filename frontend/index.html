@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>แผนที่น้ำท่วม เขตทุ่งครุ</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>🌊 แผนที่น้ำท่วม เขตทุ่งครุ</h1>
+    <span id="model-badge" class="badge"></span>
+  </header>
+
+  <main class="layout">
+    <div id="map"></div>
+
+    <aside class="panel">
+      <section class="card">
+        <h2>ชั้นข้อมูล</h2>
+        <div class="seg" role="radiogroup" aria-label="รูปแบบแผนที่">
+          <label><input type="radio" name="layer" value="hex" checked /> พื้นที่ (Hex)</label>
+          <label><input type="radio" name="layer" value="heat" /> Heatmap</label>
+          <label><input type="radio" name="layer" value="points" /> จุดรายงาน</label>
+        </div>
+        <label class="row">ช่วงเวลา
+          <select id="hours">
+            <option value="6">6 ชม.ล่าสุด</option>
+            <option value="24" selected>24 ชม.ล่าสุด</option>
+            <option value="72">3 วัน</option>
+            <option value="168">7 วัน</option>
+          </select>
+        </label>
+        <div class="legend">
+          <span style="--c:#2c7bb6">แห้ง</span>
+          <span style="--c:#fdae61">ต่ำ</span>
+          <span style="--c:#f46d43">ปานกลาง</span>
+          <span style="--c:#a50026">สูง</span>
+        </div>
+        <button id="locate" class="btn secondary">📍 บริเวณของฉันน้ำท่วมไหม?</button>
+        <div id="area-result" class="area-result" hidden></div>
+      </section>
+
+      <section class="card">
+        <h2>แจ้งสถานการณ์น้ำ</h2>
+        <form id="report-form">
+          <label class="file">
+            <input type="file" id="image" name="image" accept="image/*" required />
+            <img id="preview" alt="" hidden />
+            <span id="file-hint">เลือกรูป / ถ่ายรูป</span>
+          </label>
+          <p class="hint" id="pin-hint">👆 คลิกบนแผนที่เพื่อปักหมุดตำแหน่ง</p>
+          <div class="coords">
+            <input id="lat" name="lat" placeholder="lat" readonly required />
+            <input id="lng" name="lng" placeholder="lng" readonly required />
+          </div>
+          <button type="submit" class="btn" id="submit">ส่งรายงาน</button>
+          <p id="form-msg" class="msg" role="status"></p>
+        </form>
+      </section>
+    </aside>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+  <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
