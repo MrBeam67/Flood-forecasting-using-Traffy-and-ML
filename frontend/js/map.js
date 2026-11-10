@@ -55,6 +55,64 @@ export function createMap(el) {
   return map;
 }
 
+// ---- Flood susceptibility grid (100 m cells from QGIS, see backend/scripts/export_flood_grid.py)
+// Breaks are ~quintiles of `suscept` so each class covers a similar number of cells.
+export const SUSCEPT_CLASSES = [
+  { min: 0.56, color: "#bd0026", label: "สูงมาก" },
+  { min: 0.50, color: "#f03b20", label: "สูง" },
+  { min: 0.44, color: "#fd8d3c", label: "ปานกลาง" },
+  { min: 0.37, color: "#fecc5c", label: "ต่ำ" },
+  { min: -Infinity, color: "#ffffb2", label: "ต่ำมาก" },
+];
+const susceptClass = (s) => SUSCEPT_CLASSES.find((c) => s >= c.min);
+const fmt = (v, d = 2) => (v == null ? "–" : Number(v).toFixed(d));
+
+export class SusceptLayer {
+  constructor(map) {
+    this.map = map;
+    this.layer = null;
+    this.loading = null;
+    map.createPane("suscept").style.zIndex = 350; // below report overlays (400)
+  }
+
+  async load() {
+    if (!this.loading) {
+      this.loading = fetch("/static/data/flood_grid.geojson")
+        .then((r) => r.json())
+        .then((gj) => {
+          this.layer = L.geoJSON(gj, {
+            pane: "suscept",
+            filter: (f) => f.properties.suscept != null,
+            style: (f) => ({
+              stroke: false,
+              fillColor: susceptClass(f.properties.suscept).color,
+              fillOpacity: 0.55,
+            }),
+            onEachFeature: (f, l) => {
+              const p = f.properties;
+              const c = susceptClass(p.suscept);
+              l.bindPopup(
+                `<div class="popup"><strong>ความเสี่ยงน้ำท่วม: ${c.label}</strong> (${fmt(p.suscept)})<br>` +
+                `ระดับพื้นดินเฉลี่ย ${fmt(p.elev_mean)} ม.<br>` +
+                `ระยะถึงคลอง ${fmt(p.canal_dist, 0)} ม.<br>` +
+                `สัดส่วนอาคาร (BCR) ${fmt(p.bcr * 100, 0)}%<br>` +
+                `ความหนาแน่นถนน ${fmt(p.road_dens, 1)}<br>` +
+                `พื้นที่น้ำ ${fmt(p.water_mean * 100, 0)}%</div>`
+              );
+            },
+          });
+          return this.layer;
+        });
+    }
+    return this.loading;
+  }
+
+  async setVisible(on) {
+    if (on) (await this.load()).addTo(this.map);
+    else if (this.layer) this.map.removeLayer(this.layer);
+  }
+}
+
 export class FloodLayers {
   constructor(map) {
     this.map = map;

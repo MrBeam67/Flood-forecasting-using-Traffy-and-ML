@@ -1,10 +1,24 @@
 /* global L */
 import { api } from "./api.js";
-import { createMap, FloodLayers, severityText, timeAgo } from "./map.js";
+import { createMap, FloodLayers, SusceptLayer, SUSCEPT_CLASSES, severityText, timeAgo } from "./map.js";
 
 const $ = (id) => document.getElementById(id);
 const map = createMap("map");
 const layers = new FloodLayers(map);
+
+// ---- flood susceptibility grid (from QGIS)
+const suscept = new SusceptLayer(map);
+$("suscept-legend").innerHTML = [...SUSCEPT_CLASSES]
+  .reverse()
+  .map((c) => `<span style="--c:${c.color}">${c.label}</span>`)
+  .join("");
+const syncSuscept = () => {
+  const on = $("suscept-toggle").checked;
+  $("suscept-legend").hidden = !on;
+  suscept.setVisible(on);
+};
+$("suscept-toggle").addEventListener("change", syncSuscept);
+syncSuscept();
 
 // ---- model badge
 api.config().then((c) => {

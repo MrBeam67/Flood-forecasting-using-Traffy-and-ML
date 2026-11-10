@@ -47,6 +47,12 @@ select, input { font: inherit; color: inherit; background: var(--bg); border: 1p
 
 .legend { display: flex; margin: 12px 0; border-radius: 6px; overflow: hidden; font-size: .78rem; }
 .legend span { flex: 1; text-align: center; padding: 3px 0; color: #fff; background: var(--c); }
+.legend[hidden] { display: none; }
+.legend.suscept { margin-top: 6px; }
+.legend.suscept span { color: #3a2a00; }
+.legend.suscept span:nth-child(n+4) { color: #fff; }
+.row.check { justify-content: flex-start; margin-top: 12px; cursor: pointer; }
+.row.check input { width: auto; padding: 0; }
 
 .btn {
   width: 100%; padding: 10px; border: 0; border-radius: 8px; font: inherit; font-weight: 600;
