@@ -13,12 +13,20 @@ export function severityColor(s) {
   for (const [t, col] of STOPS) if (s >= t) c = col;
   return c;
 }
-export function severityText(s) {
-  if (s < 0.17) return "แห้ง / ไม่ท่วม";
-  if (s < 0.5) return "ท่วมระดับต่ำ";
-  if (s < 0.83) return "ท่วมระดับปานกลาง";
-  return "ท่วมระดับสูง";
-}
+// Water depth in body / object terms. Index = model level (none, ankle, knee, waist,
+// neck_up in backend/models/flood_cls.json); score 0..1 = level / 4.
+export const DEPTH_LEVELS = [
+  { label: "ไม่ท่วม", ref: "แห้ง หรือมีน้ำขังบาง ๆ" },
+  { label: "ท่วมต่ำกว่าเข่า", ref: "ลึกประมาณ 10–40 ซม. · ระดับข้อเท้า ขอบฟุตบาท" },
+  { label: "ท่วมถึงเข่า", ref: "ลึกประมาณ 40–70 ซม. · ระดับเข่า ครึ่งล้อรถเก๋ง" },
+  { label: "ท่วมถึงเอว", ref: "ลึกประมาณ 70 ซม.–1.1 ม. · ระดับเอว ฝากระโปรงรถเก๋ง" },
+  { label: "ท่วมถึงคอ", ref: "ลึกเกิน 1.2 ม. · ระดับคอผู้ใหญ่ เกือบถึงหลังคารถเก๋ง" },
+];
+export const depthLevel = (s) => Math.max(0, Math.min(4, Math.round(s * 4)));
+export const severityText = (s) => DEPTH_LEVELS[depthLevel(s)].label;
+export const depthRef = (s) => DEPTH_LEVELS[depthLevel(s)].ref;
+/** "ท่วมถึงเข่า (ลึกประมาณ 40–70 ซม. · ระดับเข่า ครึ่งล้อรถเก๋ง)" */
+export const depthFull = (s) => `${severityText(s)} (${depthRef(s)})`;
 export function timeAgo(iso) {
   const min = Math.round((Date.now() - new Date(iso)) / 60000);
   if (min < 1) return "เมื่อสักครู่";
@@ -52,7 +60,9 @@ export function createMap(el) {
           f.properties.admin_level === 8 && l.bindTooltip(f.properties.name, { sticky: true }),
         interactive: true,
       }).addTo(map);
-      map.fitBounds(layer.getBounds(), { padding: [10, 10] });
+      map.areaBounds = layer.getBounds();
+      if (map.getSize().x > 0) map.fitBounds(map.areaBounds, { padding: [10, 10] });
+      map.fire("arealoaded");
     })
     .catch(() => {});
 
@@ -102,10 +112,10 @@ export class SusceptLayer {
     let head = "";
     if (this.risk) {
       const r = RISK_CLASSES[this.risk.cells[p.id] || 0];
-      head = `<strong>คาดการณ์ ${this.risk.title}: ${r.label}</strong><br>`;
+      head = `<strong>${this.risk.title}: ${r.label}</strong><br>`;
     }
     return (
-      `<div class="popup">${head}<strong>ความเสี่ยงน้ำท่วม (คงที่): ${c.label}</strong> (${fmt(p.suscept)})<br>` +
+      `<div class="popup">${head}<strong>สภาพพื้นที่: เสี่ยง${c.label}</strong> (${fmt(p.suscept)})<br>` +
       `ระดับพื้นดินเฉลี่ย ${fmt(p.elev_mean)} ม.<br>` +
       `ระยะถึงคลอง ${fmt(p.canal_dist, 0)} ม.<br>` +
       `สัดส่วนอาคาร (BCR) ${fmt(p.bcr * 100, 0)}%<br>` +
@@ -164,7 +174,8 @@ export class FloodLayers {
         const p = f.properties;
         l.bindPopup(
           `<div class="popup"><strong>${severityText(p.severity)}</strong><br>` +
-          `ความรุนแรง ${p.severity.toFixed(2)} (สูงสุด ${p.max_score.toFixed(2)})<br>` +
+          `<span class="ref">(${depthRef(p.severity)})</span><br>` +
+          (depthLevel(p.max_score) > depthLevel(p.severity) ? `ลึกที่สุดที่มีคนแจ้ง: ${severityText(p.max_score)}<br>` : "") +
           `${p.count} รายงาน · ล่าสุด ${timeAgo(p.latest)}</div>`
         );
       },
@@ -194,7 +205,8 @@ export class FloodLayers {
         })
           .bindPopup(
             `<div class="popup"><img src="${esc(r.image_url)}" alt="">` +
-            `<strong>${severityText(r.score)}</strong> (${r.score.toFixed(2)})<br>` +
+            `<strong>${severityText(r.score)}</strong><br>` +
+            `<span class="ref">(${depthRef(r.score)})</span><br>` +
             `${timeAgo(r.created_at)}</div>`
           )
           .addTo(this.points);

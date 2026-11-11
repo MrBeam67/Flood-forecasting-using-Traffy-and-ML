@@ -1,35 +1,37 @@
 /* global L */
+// App shell: home (my-area status), map (full-screen + sheet), report wizard, alerts.
 import { api } from "./api.js";
-import { createMap, FloodLayers, SusceptLayer, SUSCEPT_CLASSES, RISK_CLASSES, severityText, timeAgo } from "./map.js";
+import {
+  createMap, FloodLayers, SusceptLayer, SUSCEPT_CLASSES, RISK_CLASSES, TUNG_KHRU_CENTER,
+  severityText, depthRef, depthFull, depthLevel, timeAgo,
+} from "./map.js";
 
 const $ = (id) => document.getElementById(id);
-const map = createMap("map");
-const layers = new FloodLayers(map);
-
-// ---- flood susceptibility grid (from QGIS)
-const suscept = new SusceptLayer(map);
-function setLegend(classes) {
-  $("suscept-legend").classList.toggle("risk", classes === RISK_CLASSES);
-  $("suscept-legend").innerHTML = classes.map((c) => `<span style="--c:${c.color}">${c.label}</span>`).join("");
-}
-setLegend([...SUSCEPT_CLASSES].reverse());
-const syncSuscept = () => {
-  const on = $("suscept-toggle").checked;
-  $("suscept-legend").hidden = !on;
-  suscept.setVisible(on);
+const desktop = matchMedia("(min-width: 900px)");
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } },
 };
-$("suscept-toggle").addEventListener("change", syncSuscept);
-syncSuscept();
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-// ---- model badge
-api.config().then((c) => {
-  const b = $("model-badge");
-  b.textContent = c.model_version === "dummy" ? "โมเดลทดสอบ (ผลยังไม่จริง)" : `model: ${c.model_version}`;
-  b.classList.toggle("dummy", c.model_version === "dummy");
-});
+// ---------------------------------------------------------------- shared wording
+const LEVELS = [
+  { label: "ปกติ", icon: "✅" },
+  { label: "เฝ้าระวัง", icon: "⚠️" },
+  { label: "เสี่ยงท่วม", icon: "🌧️" },
+  { label: "เสี่ยงสูง", icon: "🚨" },
+];
+const ADVICE = [
+  "ไม่มีความเสี่ยงพิเศษ",
+  "ติดตามสถานการณ์ และเลี่ยงถนนที่น้ำท่วมขังบ่อย",
+  "ยกของขึ้นที่สูง ย้ายรถออกจากที่ต่ำ เตรียมไฟฉายและยาประจำตัว",
+  "ย้ายรถและของมีค่าขึ้นที่สูง เก็บเอกสารสำคัญ ถ้าน้ำเข้าบ้านโทร 1555",
+];
+// District-wide level from the TMD rain level (light rain alone is not a warning).
+const RAIN_TO_LEVEL = { none: 0, light: 0, moderate: 1, heavy: 2, very_heavy: 3 };
+// Citizen reports: water depth (ไม่ท่วม/ต่ำกว่าเข่า/เข่า/เอว/คอ) -> status level
+const reportLevel = (s) => [0, 1, 2, 3, 3][depthLevel(s)];
 
-// ---- 3-day rain forecast (TMD) + forecast risk on the 100 m grid
-const WARN_LEVELS = new Set(["moderate", "heavy", "very_heavy"]);
 function dayName(iso, i) {
   if (i === 0) return "วันนี้";
   if (i === 1) return "พรุ่งนี้";
@@ -37,193 +39,466 @@ function dayName(iso, i) {
 }
 const shortDate = (iso) =>
   new Date(iso + "T00:00:00+07:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+const hhmm = (iso) => new Date(iso).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+const fmtLoc = ({ lat, lng }) => `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
 
-let selectedDay = null;
-
-async function selectDay(i) {
-  selectedDay = selectedDay === i ? null : i; // click again = back to static map
-  document.querySelectorAll(".rain-day").forEach((el, k) => el.setAttribute("aria-pressed", k === selectedDay));
-  if (selectedDay === null) {
-    await suscept.setRisk(null);
-    setLegend([...SUSCEPT_CLASSES].reverse());
-    $("grid-mode").hidden = true;
-    return;
-  }
-  const day = selectedDay;
-  $("grid-mode").hidden = false;
-  $("grid-mode").textContent = "กำลังคำนวณพื้นที่เสี่ยง…";
-  try {
-    const r = await api.riskForecast(day);
-    if (selectedDay !== day) return; // user clicked something else meanwhile
-    const title = dayName(r.date, day);
-    if (!$("suscept-toggle").checked) {
-      $("suscept-toggle").checked = true;
-      syncSuscept();
-    }
-    await suscept.setRisk({ ...r, title });
-    setLegend(RISK_CLASSES);
-    const ha = r.counts[2] + r.counts[3];
-    $("grid-mode").innerHTML =
-      `แสดง: <strong>ความเสี่ยงคาดการณ์ ${title} (${shortDate(r.date)})</strong><br>` +
-      (ha ? `พื้นที่เสี่ยงท่วม ~${ha} เฮกตาร์ · เฝ้าระวัง ~${r.counts[1]} เฮกตาร์` :
-            r.counts[1] ? `ไม่มีพื้นที่เสี่ยงท่วม · เฝ้าระวัง ~${r.counts[1]} เฮกตาร์` : "ไม่มีพื้นที่เสี่ยง");
-  } catch {
-    $("grid-mode").textContent = "คำนวณพื้นที่เสี่ยงไม่สำเร็จ";
-  }
+function getGPS() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error("เครื่องนี้หาตำแหน่งไม่ได้"));
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => resolve({ lat: coords.latitude, lng: coords.longitude }),
+      () => reject(new Error("ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง (ต้องเปิดผ่าน https หรือ localhost)")),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  });
 }
 
-async function loadRain() {
-  try {
-    const f = await api.rainForecast();
-    $("rain-days").innerHTML = f.days
-      .map(
-        (d, i) => `
-        <button type="button" class="rain-day lv-${d.level}" data-day="${i}" aria-pressed="${i === selectedDay}">
-          <div class="rd-name">${dayName(d.date, i)}<span>${shortDate(d.date)}</span></div>
-          <div class="rd-mm">${d.rain_max.toFixed(1)}<small> มม.</small></div>
-          <div class="rd-level">${d.level_label}</div>
-          <div class="rd-range">ทั้งเขต ${d.rain_min.toFixed(1)}–${d.rain_max.toFixed(1)}</div>
-        </button>`
-      )
-      .join("");
-    const t = new Date(f.fetched_at).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
-    $("rain-meta").textContent = `อัปเดต ${t}${f.stale ? " (ข้อมูลเก่า)" : ""}`;
-
-    const warn = f.days.map((d, i) => [d, i]).filter(([d]) => WARN_LEVELS.has(d.level));
-    $("rain-alert").hidden = warn.length === 0;
-    if (warn.length) {
-      const [d, i] = warn.reduce((a, b) => (b[0].rain_max > a[0].rain_max ? b : a));
-      $("rain-alert").innerHTML =
-        `⚠️ ${dayName(d.date, i)}คาด${d.level_label} สูงสุด ${d.rain_max.toFixed(1)} มม. ` +
-        `<button type="button" class="link" data-day="${i}">ดูพื้นที่เสี่ยงบนแผนที่</button>`;
-    }
-    if (selectedDay !== null) {
-      const keep = selectedDay;
-      selectedDay = null;
-      await selectDay(keep); // refresh the map with the new forecast
-    }
-  } catch (err) {
-    $("rain-days").innerHTML = `<p class="hint">ดึงพยากรณ์ฝนไม่ได้ในขณะนี้</p>`;
-    $("rain-meta").textContent = "";
-    $("rain-alert").hidden = true;
-  }
+// ---------------------------------------------------------------- font size
+function applyFont(big) {
+  document.documentElement.classList.toggle("big", big);
+  $("font-btn").setAttribute("aria-pressed", big);
 }
-$("rain-card").addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-day]");
-  if (!btn) return;
-  const i = Number(btn.dataset.day);
-  if (btn.classList.contains("link") && selectedDay === i) return; // already showing it
-  selectDay(i);
-});
-loadRain();
-setInterval(loadRain, 30 * 60_000);
-
-// ---- layer controls
-document.querySelectorAll('input[name="layer"]').forEach((el) =>
-  el.addEventListener("change", () => layers.setMode(el.value))
-);
-$("hours").addEventListener("change", (e) => layers.setHours(Number(e.target.value)));
-layers.refresh();
-setInterval(() => layers.refresh(), 60_000); // auto-refresh every minute
-
-// ---- pin location by clicking the map
-let pin = null;
-function setPin(latlng) {
-  if (!pin) {
-    pin = L.marker(latlng, { draggable: true }).addTo(map);
-    pin.on("dragend", () => fillCoords(pin.getLatLng()));
-  }
-  pin.setLatLng(latlng);
-  fillCoords(latlng);
-}
-function fillCoords({ lat, lng }) {
-  $("lat").value = lat.toFixed(6);
-  $("lng").value = lng.toFixed(6);
-  $("pin-hint").textContent = "📌 ปักหมุดแล้ว (ลากหมุดเพื่อเลื่อนตำแหน่งได้)";
-}
-map.on("click", (e) => setPin(e.latlng));
-
-// ---- image preview
-$("image").addEventListener("change", (e) => {
-  const f = e.target.files[0];
-  if (!f) return;
-  $("preview").src = URL.createObjectURL(f);
-  $("preview").hidden = false;
-  $("file-hint").textContent = f.name;
+applyFont(!!store.get("bigFont"));
+$("font-btn").addEventListener("click", () => {
+  const big = !document.documentElement.classList.contains("big");
+  applyFont(big);
+  store.set("bigFont", big);
+  map.invalidateSize();
 });
 
-// ---- submit
-$("report-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const file = $("image").files[0];
-  if (!file) return showMsg("กรุณาเลือกรูป", true);
-  if (!$("lat").value) return showMsg("กรุณาคลิกบนแผนที่เพื่อปักหมุด", true);
+api.config().then((c) => {
+  if (c.model_version !== "dummy") return;
+  $("model-badge").hidden = false;
+  $("model-badge").textContent = "โหมดทดสอบ";
+}).catch(() => {});
 
-  $("submit").disabled = true;
-  showMsg("กำลังวิเคราะห์รูป…");
-  try {
-    const r = await api.submitReport(file, $("lat").value, $("lng").value);
-    showMsg(`ส่งแล้ว ✓ ผลประเมิน: ${severityText(r.score)} (score ${r.score.toFixed(2)})`);
-    e.target.reset();
-    $("preview").hidden = true;
-    $("file-hint").textContent = "เลือกรูป / ถ่ายรูป";
-    await layers.refresh();
-  } catch (err) {
-    showMsg(err.message, true);
-  } finally {
-    $("submit").disabled = false;
+// ---------------------------------------------------------------- map
+const map = createMap("map");
+const reports = new FloodLayers(map);
+const grid = new SusceptLayer(map);
+let fitted = false;
+function mapShown() {
+  map.invalidateSize();
+  if (!fitted && map.areaBounds && map.getSize().x > 0) {
+    map.fitBounds(map.areaBounds, { padding: [10, 10] });
+    fitted = true;
   }
-});
-function showMsg(text, isErr = false) {
-  $("form-msg").textContent = text;
-  $("form-msg").className = "msg " + (isErr ? "err" : "ok");
 }
+map.on("arealoaded", () => (desktop.matches || app.dataset.tab === "map") && mapShown());
 
-// ---- "Is my area flooded?"
-let meMarker = null;
-$("locate").addEventListener("click", () => {
-  const out = $("area-result");
-  out.hidden = false;
-  if (!navigator.geolocation) {
-    out.textContent = "เบราว์เซอร์นี้หาตำแหน่งไม่ได้";
-    return;
-  }
-  out.textContent = "กำลังหาตำแหน่ง…";
-  navigator.geolocation.getCurrentPosition(
-    async ({ coords }) => {
-      const ll = [coords.latitude, coords.longitude];
-      map.setView(ll, 16);
-      if (!meMarker) meMarker = L.circleMarker(ll, { radius: 8, color: "#1565c0", fillOpacity: 1 }).addTo(map);
-      meMarker.setLatLng(ll);
-      const riskP = api.riskAt(ll[0], ll[1]).catch(() => null);
-      try {
-        const a = await api.area(ll[0], ll[1], layers.hours);
-        if (!a.in_district) {
-          out.innerHTML = "ตำแหน่งของคุณอยู่นอกเขตทุ่งครุ";
-        } else if (!a.summary) {
-          out.innerHTML = "<strong>ยังไม่มีรายงาน</strong><br>บริเวณนี้ยังไม่มีใครแจ้งในช่วงเวลาที่เลือก ช่วยถ่ายรูปแจ้งได้เลย";
-        } else {
-          const s = a.summary;
-          out.innerHTML =
-            `<strong>${severityText(s.severity)}</strong><br>` +
-            `ความรุนแรง ${s.severity.toFixed(2)} จาก ${s.count} รายงาน · ล่าสุด ${timeAgo(s.latest)}`;
-        }
-        const rk = (await riskP)?.cell;
-        if (a.in_district && rk) {
-          out.innerHTML +=
-            `<div class="area-forecast"><strong>พื้นที่เสี่ยง (คงที่): ${rk.suscept_label}</strong>` +
-            `<ul>${rk.days
-              .map((d, i) =>
-                `<li><span>${dayName(d.date, i)}</span>` +
-                `<span class="risk-chip r${d.risk}" style="--c:${RISK_CLASSES[d.risk].color}">${d.risk_label}</span>` +
-                `<span class="muted">ฝน ${d.rain_mm.toFixed(1)} มม.</span></li>`)
-              .join("")}</ul></div>`;
-        }
-      } catch {
-        out.textContent = "ดึงข้อมูลไม่สำเร็จ";
-      }
-    },
-    () => (out.textContent = "ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง (ต้องเปิดผ่าน https หรือ localhost)"),
-    { enableHighAccuracy: true, timeout: 10000 }
+// ---------------------------------------------------------------- tabs
+const app = $("app");
+function showTab(tab) {
+  if (tab === "map" && desktop.matches) return; // map is always on screen
+  app.dataset.tab = tab;
+  document.querySelectorAll(".tabbar button").forEach((b) =>
+    b.dataset.tab === tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")
   );
+  for (const t of ["home", "report", "alerts"]) $("tab-" + t).hidden = t !== tab;
+  document.querySelector(".panel").scrollTop = 0;
+  if (tab === "map") requestAnimationFrame(mapShown);
+  if (tab === "report") wizard.enter();
+}
+desktop.addEventListener("change", () => {
+  if (desktop.matches && app.dataset.tab === "map") showTab("home");
+  requestAnimationFrame(mapShown);
 });
+if (desktop.matches) requestAnimationFrame(mapShown);
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-tab],[data-goto],[data-mapday]");
+  if (!t || t.closest(".map-chips")) return;
+  if (t.dataset.mapday !== undefined) {
+    setMapView(Number(t.dataset.mapday));
+    showTab("map");
+  } else {
+    showTab(t.dataset.tab || t.dataset.goto);
+  }
+});
+
+// ---------------------------------------------------------------- forecast data (shared)
+let forecast = null;         // /api/forecast/rain
+let risks = [];              // /api/forecast/risk?day=i
+async function loadForecast() {
+  try {
+    forecast = await api.rainForecast();
+    risks = await Promise.all(forecast.days.map((_, i) => api.riskForecast(i).catch(() => null)));
+  } catch {
+    forecast = null;
+    risks = [];
+  }
+  renderChips();
+  renderAlerts();
+  renderHome();
+  setMapView(mapView);
+}
+
+// ---------------------------------------------------------------- map view: chips + sheet
+let mapView = 0; // forecast day index
+function renderChips() {
+  const days = forecast?.days || [];
+  $("map-chips").innerHTML = days.map((d, i) => `<button type="button" class="chip" data-view="${i}">${dayName(d.date, i)}</button>`).join("");
+  syncChips();
+}
+function syncChips() {
+  document.querySelectorAll("#map-chips .chip").forEach((c) =>
+    c.setAttribute("aria-pressed", String(c.dataset.view === String(mapView)))
+  );
+}
+$("map-chips").addEventListener("click", (e) => {
+  const c = e.target.closest(".chip");
+  if (c) setMapView(Number(c.dataset.view));
+});
+
+function setLegend(items) {
+  $("legend").innerHTML = items
+    .map((c) => `<span style="--c:${c.color};--fg:${c.dark ? "#fff" : "#3a2a00"}">${c.label}</span>`)
+    .join("");
+}
+
+async function reportLine() {
+  const n = (await api.reports(Number($("hours").value)).catch(() => null))?.length;
+  if (n == null) return "โหลดรายงานไม่สำเร็จ";
+  const span = $("hours").selectedOptions[0].text;
+  return n ? `รายงานจากประชาชน ${n} จุด (ย้อนหลัง ${span})` : `ไม่มีรายงานจากประชาชน (ย้อนหลัง ${span})`;
+}
+
+// v = forecast day index (0 = today). Citizen reports are shown on every day,
+// filtered by the "ย้อนหลัง" setting; the grid shows that day's forecast risk.
+let viewSeq = 0;
+async function setMapView(v) {
+  const seq = ++viewSeq;
+  mapView = v;
+  syncChips();
+  const d = forecast?.days[v];
+  const r = risks[v];
+  const reportsP = reportLine();
+
+  if (!d || !r) {
+    // No forecast: fall back to the static susceptibility grid.
+    await grid.setRisk(null);
+    setLegend([...SUSCEPT_CLASSES].reverse().map((c, i) => ({ ...c, dark: i >= 3 })));
+    const rl = await reportsP;
+    if (seq !== viewSeq) return;
+    $("sheet-title").textContent = forecast ? "ไม่มีข้อมูลพยากรณ์วันนี้" : "แผนที่ความเสี่ยงตามสภาพพื้นที่";
+    $("sheet-sub").textContent = `${rl} · สีพื้น = ความเสี่ยงตามสภาพพื้นที่ (ต่ำ → สูง)`;
+    return;
+  }
+
+  setLegend(RISK_CLASSES.map((c, i) => ({ ...c, dark: i >= 2 })));
+  if (!$("grid-toggle").checked) {
+    $("grid-toggle").checked = true;
+    grid.setVisible(true);
+  }
+  await grid.setRisk({ ...r, title: dayName(d.date, v) });
+  const risky = r.counts[2] + r.counts[3];
+  const riskLine = risky
+    ? `พื้นที่เสี่ยงท่วม ~${risky} เฮกตาร์ · เฝ้าระวัง ~${r.counts[1]} เฮกตาร์`
+    : r.counts[1] ? `ไม่มีพื้นที่เสี่ยงท่วม · เฝ้าระวัง ~${r.counts[1]} เฮกตาร์` : "ไม่มีพื้นที่เสี่ยง";
+  const rl = await reportsP;
+  if (seq !== viewSeq) return;
+  $("sheet-title").textContent = `${dayName(d.date, v)} · ${d.level_label} ${d.rain_max.toFixed(1)} มม.`;
+  $("sheet-sub").innerHTML = `${riskLine}<br>${rl}`;
+}
+
+$("sheet-toggle").addEventListener("click", () => {
+  const open = $("sheet-more").hidden;
+  $("sheet-more").hidden = !open;
+  $("sheet-toggle").setAttribute("aria-expanded", open);
+});
+document.querySelectorAll('input[name="layer"]').forEach((el) =>
+  el.addEventListener("change", () => reports.setMode(el.value))
+);
+$("hours").addEventListener("change", (e) => {
+  reports.setHours(Number(e.target.value));
+  setMapView(mapView); // refresh the report count
+});
+$("grid-toggle").addEventListener("change", (e) => grid.setVisible(e.target.checked));
+grid.setVisible(true);
+
+// ---------------------------------------------------------------- home location
+let homeLoc = store.get("homeLoc");
+let homeMarker = null;
+let picking = false;
+
+function setHome(loc) {
+  homeLoc = loc;
+  store.set("homeLoc", loc);
+  drawHomeMarker();
+  renderHome();
+}
+function drawHomeMarker() {
+  if (!homeLoc) return;
+  if (!homeMarker) {
+    homeMarker = L.circleMarker([homeLoc.lat, homeLoc.lng], {
+      radius: 9, weight: 3, color: "#fff", fillColor: "#1565c0", fillOpacity: 1,
+    }).bindTooltip("บ้านของคุณ").addTo(map);
+  }
+  homeMarker.setLatLng([homeLoc.lat, homeLoc.lng]);
+}
+drawHomeMarker();
+
+$("loc-gps").addEventListener("click", async () => {
+  $("loc-msg").className = "msg";
+  $("loc-msg").textContent = "กำลังหาตำแหน่ง…";
+  try {
+    setHome(await getGPS());
+    $("loc-msg").textContent = "";
+  } catch (err) {
+    $("loc-msg").className = "msg err";
+    $("loc-msg").textContent = err.message + " ลองกด \"เลือกบนแผนที่\" แทน";
+  }
+});
+$("loc-pick").addEventListener("click", () => {
+  picking = true;
+  $("pick-hint").hidden = false;
+  if (desktop.matches) mapShown();
+  else showTab("map");
+});
+$("pick-cancel").addEventListener("click", () => {
+  picking = false;
+  $("pick-hint").hidden = true;
+  showTab("home");
+});
+map.on("click", (e) => {
+  if (!picking) return;
+  picking = false;
+  $("pick-hint").hidden = true;
+  setHome({ lat: e.latlng.lat, lng: e.latlng.lng });
+  showTab("home");
+});
+$("loc-change").addEventListener("click", () => {
+  $("loc-setup").hidden = !$("loc-setup").hidden;
+});
+
+// ---------------------------------------------------------------- home render
+function setStatus(el, lvl, label, detail, icon) {
+  el.className = `status st-${lvl}`;
+  el.innerHTML =
+    `<div class="st-icon" aria-hidden="true">${icon || LEVELS[lvl].icon}</div>` +
+    `<div class="st-label">${label}</div><div class="st-detail">${detail}</div>`;
+}
+function dayButtons(items) {
+  // items: [{date, level, label, rain}]
+  return items
+    .map(
+      (d, i) => `
+      <button type="button" class="day st-${d.level}" data-mapday="${i}"
+        aria-label="${dayName(d.date, i)} ${d.label} ฝน ${d.rain.toFixed(1)} มิลลิเมตร ดูบนแผนที่">
+        <span class="d-name">${dayName(d.date, i)}</span>
+        <span class="d-ico" aria-hidden="true">${LEVELS[d.level].icon}</span>
+        <span class="d-lv">${d.label}</span>
+        <span class="d-rain">ฝน ${d.rain.toFixed(1)} มม.</span>
+      </button>`
+    )
+    .join("");
+}
+
+let homeSeq = 0;
+async function renderHome() {
+  const seq = ++homeSeq;
+  const st = $("status");
+  $("home-meta").textContent = forecast
+    ? `อัปเดต ${hhmm(forecast.fetched_at)}${forecast.stale ? " (ข้อมูลเก่า)" : ""} · ฝนพยากรณ์จากกรมอุตุนิยมวิทยา`
+    : "";
+
+  if (!homeLoc) {
+    $("home-loc").textContent = "ทั้งเขตทุ่งครุ";
+    $("loc-change").hidden = true;
+    $("loc-setup").hidden = false;
+    if (!forecast) {
+      setStatus(st, 0, "ไม่มีข้อมูล", "ดึงพยากรณ์ฝนไม่ได้ในขณะนี้", "❔");
+      $("home-days").innerHTML = "";
+      return;
+    }
+    const days = forecast.days.map((d) => ({
+      date: d.date, level: RAIN_TO_LEVEL[d.level], label: LEVELS[RAIN_TO_LEVEL[d.level]].label, rain: d.rain_max,
+    }));
+    const t = days[0];
+    setStatus(st, t.level, t.label, `ทั้งเขต วันนี้ · ${forecast.days[0].level_label} ${t.rain.toFixed(1)} มม.<br>${ADVICE[t.level]}`);
+    $("home-days").innerHTML = dayButtons(days);
+    return;
+  }
+
+  $("home-loc").textContent = `บ้านของคุณ (${fmtLoc(homeLoc)})`;
+  $("loc-change").hidden = false;
+  $("loc-setup").hidden = true;
+  const [rk, area] = await Promise.all([
+    api.riskAt(homeLoc.lat, homeLoc.lng).then((r) => r.cell).catch(() => undefined),
+    api.area(homeLoc.lat, homeLoc.lng, 24).catch(() => null),
+  ]);
+  if (seq !== homeSeq) return; // a newer render started
+
+  if (area && !area.in_district) {
+    setStatus(st, 0, "อยู่นอกพื้นที่", "ตำแหน่งนี้อยู่นอกพื้นที่ที่ระบบดูแล (เขตทุ่งครุ)<br>กด \"เปลี่ยน\" เพื่อเลือกตำแหน่งใหม่", "📍");
+    $("home-days").innerHTML = "";
+    return;
+  }
+
+  const s = area?.summary;
+  const repLvl = s ? reportLevel(s.severity) : 0;
+  const nowLine = s
+    ? `ตอนนี้: <strong>${depthFull(s.severity)}</strong><br>${s.count} รายงาน · ล่าสุด ${timeAgo(s.latest)}`
+    : "ตอนนี้: ยังไม่มีรายงานน้ำท่วมแถวนี้";
+
+  if (!rk) {
+    setStatus(st, repLvl, s && repLvl ? severityText(s.severity) : LEVELS[repLvl].label,
+      `${nowLine}<br>ยังไม่มีข้อมูลพยากรณ์สำหรับจุดนี้`);
+    $("home-days").innerHTML = "";
+    return;
+  }
+  const today = rk.days[0];
+  const lvl = Math.max(today.risk, repLvl);
+  const label = repLvl > today.risk ? severityText(s.severity) : LEVELS[lvl].label;
+  setStatus(st, lvl, label,
+    `บริเวณบ้านคุณ วันนี้<br>${nowLine}<br>ฝน ${today.rain_mm.toFixed(1)} มม. · สภาพพื้นที่เสี่ยง${rk.suscept_label}<br><strong>${ADVICE[lvl]}</strong>`);
+  $("home-days").innerHTML = dayButtons(
+    rk.days.map((d) => ({ date: d.date, level: d.risk, label: d.risk_label, rain: d.rain_mm }))
+  );
+}
+
+// ---------------------------------------------------------------- alerts tab
+function renderAlerts() {
+  if (!forecast) {
+    $("alert-list").innerHTML = `<p class="hint">ดึงพยากรณ์ฝนไม่ได้ในขณะนี้</p>`;
+    $("alert-dot").hidden = true;
+    return;
+  }
+  let worst = 0;
+  $("alert-list").innerHTML = forecast.days
+    .map((d, i) => {
+      const lvl = RAIN_TO_LEVEL[d.level];
+      worst = Math.max(worst, lvl);
+      const r = risks[i];
+      const risky = r ? r.counts[2] + r.counts[3] : null;
+      return `
+      <article class="alert-item st-${lvl}">
+        <div class="ai-head"><strong>${dayName(d.date, i)} ${shortDate(d.date)}</strong>
+          <span class="ai-lv">${LEVELS[lvl].icon} ${LEVELS[lvl].label}</span></div>
+        <p>${esc(d.level_label)} สูงสุด ${d.rain_max.toFixed(1)} มม.${
+          risky ? ` · พื้นที่เสี่ยงท่วม ~${risky} เฮกตาร์` : ""}</p>
+        <p>${ADVICE[lvl]}</p>
+        <button type="button" class="link" data-mapday="${i}">ดูบนแผนที่ →</button>
+      </article>`;
+    })
+    .join("");
+  $("alert-dot").hidden = worst < 1;
+}
+
+// ---------------------------------------------------------------- report wizard
+const wizard = (() => {
+  let step = 1, file = null, loc = null, pickMap = null, triedGPS = false;
+  const steps = () => document.querySelectorAll("#tab-report .step");
+
+  function show(n) {
+    step = n;
+    steps().forEach((el) => (el.hidden = el.dataset.step !== String(n)));
+    const k = n === "done" ? 3 : n;
+    $("wiz-count").textContent = n === "done" ? "เสร็จแล้ว" : `ขั้น ${n} จาก 3`;
+    document.querySelectorAll(".progress span").forEach((s, i) => s.classList.toggle("on", i < k));
+    if (n === 2) initPick();
+    if (n === 3) {
+      $("confirm-img").src = $("preview").src;
+      $("confirm-loc").textContent = `ตำแหน่ง ${fmtLoc(loc)}`;
+    }
+  }
+
+  function initPick() {
+    const start = loc || homeLoc || { lat: TUNG_KHRU_CENTER[0], lng: TUNG_KHRU_CENTER[1] };
+    if (!pickMap) {
+      pickMap = L.map("pick-map", { zoomControl: true, attributionControl: false })
+        .setView([start.lat, start.lng], homeLoc || loc ? 17 : 14);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(pickMap);
+    }
+    requestAnimationFrame(() => pickMap.invalidateSize());
+    if (!triedGPS && !loc) {
+      triedGPS = true;
+      useGPS(true);
+    }
+  }
+
+  async function useGPS(quiet) {
+    $("step2-msg").className = "msg";
+    $("step2-msg").textContent = "กำลังหาตำแหน่ง…";
+    try {
+      const p = await getGPS();
+      pickMap.setView([p.lat, p.lng], 18);
+      $("step2-msg").textContent = "";
+    } catch (err) {
+      $("step2-msg").className = quiet ? "msg" : "msg err";
+      $("step2-msg").textContent = quiet ? "เลื่อนแผนที่ไปยังจุดที่น้ำท่วม" : err.message;
+    }
+  }
+
+  function pickFile(f) {
+    if (!f) return;
+    file = f;
+    $("preview").src = URL.createObjectURL(f);
+    $("preview").hidden = false;
+    $("photo-hint").hidden = true;
+    $("step1-msg").textContent = "";
+  }
+  $("image").addEventListener("change", (e) => pickFile(e.target.files[0]));
+  $("image-gallery").addEventListener("change", (e) => pickFile(e.target.files[0]));
+  $("pick-gps").addEventListener("click", () => useGPS(false));
+
+  document.querySelectorAll("#tab-report [data-next]").forEach((b) =>
+    b.addEventListener("click", () => {
+      if (step === 1) {
+        if (!file) return ($("step1-msg").textContent = "ถ่ายรูปหรือเลือกรูปก่อน แล้วกดถัดไป");
+        show(2);
+      } else if (step === 2) {
+        const c = pickMap.getCenter();
+        loc = { lat: c.lat, lng: c.lng };
+        show(3);
+      }
+    })
+  );
+  document.querySelectorAll("#tab-report [data-back]").forEach((b) =>
+    b.addEventListener("click", () => show(step - 1))
+  );
+
+  $("submit").addEventListener("click", async () => {
+    $("submit").disabled = true;
+    $("step3-msg").className = "msg";
+    $("step3-msg").textContent = "กำลังส่งและวิเคราะห์รูป…";
+    try {
+      const r = await api.submitReport(file, loc.lat.toFixed(6), loc.lng.toFixed(6));
+      const lvl = reportLevel(r.score);
+      setStatus($("done-card"), lvl, "ส่งแล้ว ขอบคุณครับ",
+        `ระบบประเมินจากรูป: <strong>${severityText(r.score)}</strong><br>(${depthRef(r.score)})<br>รายงานของคุณช่วยเตือนเพื่อนบ้านได้`, "✅");
+      $("step3-msg").textContent = "";
+      show("done");
+      reports.refresh();
+      setMapView(mapView);
+      renderHome();
+    } catch (err) {
+      $("step3-msg").className = "msg err";
+      $("step3-msg").textContent = err.message;
+    } finally {
+      $("submit").disabled = false;
+    }
+  });
+
+  $("done-map").addEventListener("click", () => {
+    if (loc) map.setView([loc.lat, loc.lng], 17);
+  });
+  $("again").addEventListener("click", () => {
+    file = null;
+    loc = null;
+    $("image").value = "";
+    $("image-gallery").value = "";
+    $("preview").hidden = true;
+    $("photo-hint").hidden = false;
+    show(1);
+  });
+
+  return { enter: () => step === 2 && initPick() };
+})();
+
+// ---------------------------------------------------------------- start
+showTab("home");
+setMapView(mapView);
+loadForecast();
+setInterval(loadForecast, 30 * 60_000);
+setInterval(() => reports.refresh(), 60_000);

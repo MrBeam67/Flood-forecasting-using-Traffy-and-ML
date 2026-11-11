@@ -2,84 +2,188 @@
 <html lang="th">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>แผนที่น้ำท่วม เขตทุ่งครุ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1565c0" />
+  <title>น้ำท่วมทุ่งครุ</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
   <header class="topbar">
-    <h1>🌊 แผนที่น้ำท่วม เขตทุ่งครุ</h1>
-    <span id="model-badge" class="badge"></span>
+    <h1><span aria-hidden="true">🌊</span> น้ำท่วมทุ่งครุ</h1>
+    <span id="model-badge" class="badge" hidden></span>
+    <button id="font-btn" class="icon-btn" type="button" aria-pressed="false" title="ขยายตัวอักษร">ก<span>+</span></button>
   </header>
 
-  <main class="layout">
-    <div id="map"></div>
+  <main class="app" id="app" data-tab="home">
+    <!-- ================= MAP (tab on mobile, always visible on desktop) -->
+    <section class="view-map" aria-label="แผนที่">
+      <div id="map"></div>
 
-    <aside class="panel">
-      <section class="card" id="rain-card">
-        <div class="card-head">
-          <h2>🌧️ ฝนล่วงหน้า 3 วัน</h2>
-          <span id="rain-meta" class="meta"></span>
+      <div class="map-chips" role="radiogroup" aria-label="ช่วงเวลาที่แสดงบนแผนที่" id="map-chips">
+        
+      </div>
+
+      <div id="pick-hint" class="pick-hint" hidden>
+        แตะบนแผนที่เพื่อเลือกตำแหน่งบ้านของคุณ
+        <button type="button" class="link" id="pick-cancel">ยกเลิก</button>
+      </div>
+
+      <div class="sheet" id="sheet">
+        <button type="button" class="sheet-handle" id="sheet-toggle" aria-expanded="false" aria-controls="sheet-more">
+          <span class="grip" aria-hidden="true"></span>
+          <span id="sheet-title" class="sheet-title">แผนที่น้ำท่วม</span>
+          <span id="sheet-sub" class="sheet-sub">กำลังโหลด…</span>
+        </button>
+        <div id="legend" class="legend"></div>
+        <div id="sheet-more" class="sheet-more" hidden>
+          <fieldset class="opts">
+            <legend>รายงานจากประชาชน</legend>
+            <div class="seg">
+              <label><input type="radio" name="layer" value="hex" checked /> พื้นที่</label>
+              <label><input type="radio" name="layer" value="heat" /> ความหนาแน่น</label>
+              <label><input type="radio" name="layer" value="points" /> รายจุด</label>
+            </div>
+            <label class="row">ย้อนหลัง
+              <select id="hours">
+                <option value="6">6 ชั่วโมง</option>
+                <option value="24" selected>24 ชั่วโมง</option>
+                <option value="72">3 วัน</option>
+                <option value="168">7 วัน</option>
+              </select>
+            </label>
+          </fieldset>
+          <label class="row check"><input type="checkbox" id="grid-toggle" checked /> แสดงพื้นที่เสี่ยง (ช่อง 100 ม.)</label>
+          <p class="hint">แตะช่องบนแผนที่เพื่อดูรายละเอียด เช่น ความสูงของพื้นดิน ระยะถึงคลอง</p>
         </div>
-        <div id="rain-days" class="rain-days" aria-live="polite">
-          <p class="hint">กำลังโหลดพยากรณ์…</p>
+      </div>
+
+      <button type="button" class="fab" data-goto="report" aria-label="ถ่ายรูปแจ้งน้ำท่วม">📷</button>
+    </section>
+
+    <!-- ================= PANEL -->
+    <div class="panel">
+      <!-- HOME -->
+      <section class="tab" id="tab-home" aria-labelledby="home-h">
+        <h2 id="home-h" class="sr-only">หน้าหลัก</h2>
+        <div class="loc-line">
+          <span aria-hidden="true">📍</span>
+          <span id="home-loc">ยังไม่ได้ตั้งตำแหน่ง</span>
+          <button type="button" class="link" id="loc-change" hidden>เปลี่ยน</button>
         </div>
-        <p id="rain-alert" class="rain-alert" hidden></p>
-        <p class="hint small">กดวันเพื่อดูพื้นที่เสี่ยงท่วมคาดการณ์บนแผนที่ · ตัวเลขใหญ่ = ฝนสูงสุดในเขต (มม./24 ชม.) จากแบบจำลอง NWP กรมอุตุนิยมวิทยา</p>
+
+        <div id="loc-setup" class="card setup">
+          <p><strong>บ้านคุณเสี่ยงน้ำท่วมไหม?</strong><br>ตั้งตำแหน่งครั้งเดียว ระบบจะจำไว้ให้</p>
+          <button type="button" class="btn" id="loc-gps">ใช้ตำแหน่งปัจจุบันของฉัน</button>
+          <button type="button" class="btn secondary" id="loc-pick">เลือกบนแผนที่</button>
+          <p id="loc-msg" class="msg" role="status"></p>
+        </div>
+
+        <div id="status" class="status st-0" aria-live="polite">
+          <div class="st-icon" aria-hidden="true">⏳</div>
+          <div class="st-label">กำลังโหลด…</div>
+          <div class="st-detail"></div>
+        </div>
+
+        <div id="home-days" class="days" aria-label="ความเสี่ยง 3 วันข้างหน้า"></div>
+
+        <button type="button" class="btn big" data-goto="report">📷 ถ่ายรูปแจ้งน้ำท่วม</button>
+        <button type="button" class="btn secondary only-mobile" data-goto="map">🗺️ ดูแผนที่ทั้งเขต</button>
+        <p id="home-meta" class="meta center"></p>
       </section>
 
-      <section class="card">
-        <h2>ชั้นข้อมูล</h2>
-        <div class="seg" role="radiogroup" aria-label="รูปแบบแผนที่">
-          <label><input type="radio" name="layer" value="hex" checked /> พื้นที่ (Hex)</label>
-          <label><input type="radio" name="layer" value="heat" /> Heatmap</label>
-          <label><input type="radio" name="layer" value="points" /> จุดรายงาน</label>
+      <!-- REPORT WIZARD -->
+      <section class="tab" id="tab-report" aria-labelledby="rep-h" hidden>
+        <div class="wiz-head">
+          <h2 id="rep-h">แจ้งน้ำท่วม</h2>
+          <span id="wiz-count" class="meta">ขั้น 1 จาก 3</span>
         </div>
-        <label class="row">ช่วงเวลา
-          <select id="hours">
-            <option value="6">6 ชม.ล่าสุด</option>
-            <option value="24" selected>24 ชม.ล่าสุด</option>
-            <option value="72">3 วัน</option>
-            <option value="168">7 วัน</option>
-          </select>
-        </label>
-        <div class="legend">
-          <span style="--c:#2c7bb6">แห้ง</span>
-          <span style="--c:#fdae61">ต่ำ</span>
-          <span style="--c:#f46d43">ปานกลาง</span>
-          <span style="--c:#a50026">สูง</span>
-        </div>
-        <label class="row check">
-          <input type="checkbox" id="suscept-toggle" checked />
-          พื้นที่เสี่ยงน้ำท่วม (กริด 100 ม.)
-        </label>
-        <p id="grid-mode" class="grid-mode" hidden></p>
-        <div id="suscept-legend" class="legend suscept"></div>
-        <button id="locate" class="btn secondary">📍 บริเวณของฉันน้ำท่วมไหม?</button>
-        <div id="area-result" class="area-result" hidden></div>
-      </section>
+        <div class="progress" aria-hidden="true"><span></span><span></span><span></span></div>
 
-      <section class="card">
-        <h2>แจ้งสถานการณ์น้ำ</h2>
-        <form id="report-form">
-          <label class="file">
-            <input type="file" id="image" name="image" accept="image/*" required />
-            <img id="preview" alt="" hidden />
-            <span id="file-hint">เลือกรูป / ถ่ายรูป</span>
+        <div class="step" data-step="1">
+          <p class="q">ถ่ายรูปน้ำท่วมที่เห็น</p>
+          <label class="photo" id="photo-box">
+            <input type="file" id="image" accept="image/*" capture="environment" />
+            <img id="preview" alt="รูปที่เลือก" hidden />
+            <span id="photo-hint"><span class="big-ico" aria-hidden="true">📷</span>แตะเพื่อถ่ายรูป</span>
           </label>
-          <p class="hint" id="pin-hint">👆 คลิกบนแผนที่เพื่อปักหมุดตำแหน่ง</p>
-          <div class="coords">
-            <input id="lat" name="lat" placeholder="lat" readonly required />
-            <input id="lng" name="lng" placeholder="lng" readonly required />
+          <label class="btn secondary file-alt">
+            <input type="file" id="image-gallery" accept="image/*" /> เลือกจากอัลบั้ม
+          </label>
+          <p class="hint">ถ่ายให้เห็นระดับน้ำเทียบกับสิ่งของ เช่น ล้อรถ ขอบฟุตบาท</p>
+          <p class="msg err" id="step1-msg" role="alert"></p>
+          <button type="button" class="btn big" data-next>ถัดไป →</button>
+        </div>
+
+        <div class="step" data-step="2" hidden>
+          <p class="q">ตรงนี้ใช่ไหม?</p>
+          <div class="pick-wrap">
+            <div id="pick-map"></div>
+            <span class="pick-pin" aria-hidden="true">📍</span>
           </div>
-          <button type="submit" class="btn" id="submit">ส่งรายงาน</button>
-          <p id="form-msg" class="msg" role="status"></p>
-        </form>
+          <p class="hint">เลื่อนแผนที่ให้หมุดชี้ตรงจุดที่น้ำท่วม</p>
+          <button type="button" class="btn secondary" id="pick-gps">ใช้ตำแหน่งปัจจุบัน</button>
+          <p class="msg" id="step2-msg" role="status"></p>
+          <button type="button" class="btn big" data-next>ใช่ ถัดไป →</button>
+          <button type="button" class="link back" data-back>← ย้อนกลับ</button>
+        </div>
+
+        <div class="step" data-step="3" hidden>
+          <p class="q">ตรวจสอบแล้วส่ง</p>
+          <div class="confirm">
+            <img id="confirm-img" alt="" />
+            <div>
+              <div id="confirm-loc"></div>
+              <div class="meta">ระบบจะประเมินระดับน้ำจากรูปให้อัตโนมัติ</div>
+            </div>
+          </div>
+          <p class="msg" id="step3-msg" role="status"></p>
+          <button type="button" class="btn big" id="submit">ส่งรายงาน</button>
+          <button type="button" class="link back" data-back>← ย้อนกลับ</button>
+        </div>
+
+        <div class="step" data-step="done" hidden>
+          <div class="status st-0" id="done-card">
+            <div class="st-icon" aria-hidden="true">✅</div>
+            <div class="st-label">ส่งแล้ว ขอบคุณครับ</div>
+            <div class="st-detail" id="done-detail"></div>
+          </div>
+          <button type="button" class="btn" data-goto="map" id="done-map">ดูบนแผนที่</button>
+          <button type="button" class="btn secondary" id="again">แจ้งอีกจุด</button>
+        </div>
       </section>
-    </aside>
+
+      <!-- ALERTS -->
+      <section class="tab" id="tab-alerts" aria-labelledby="al-h" hidden>
+        <h2 id="al-h">เตือนภัย 3 วัน</h2>
+        <div id="alert-list" class="alert-list"><p class="hint">กำลังโหลด…</p></div>
+
+        <h3>เบอร์ฉุกเฉิน</h3>
+        <ul class="phones">
+          <li><a href="tel:1555"><strong>1555</strong> ศูนย์รับแจ้งเหตุ กทม. (น้ำท่วม ท่อตัน)</a></li>
+          <li><a href="tel:199"><strong>199</strong> ดับเพลิงและกู้ภัย</a></li>
+          <li><a href="tel:1669"><strong>1669</strong> เจ็บป่วยฉุกเฉิน</a></li>
+          <li><a href="tel:1784"><strong>1784</strong> ป้องกันและบรรเทาสาธารณภัย</a></li>
+        </ul>
+
+        <details class="about">
+          <summary>ความเสี่ยงคิดจากอะไร?</summary>
+          <p>รวม 2 อย่าง: <strong>สภาพพื้นที่</strong> (ความสูงพื้นดิน ระยะถึงคลอง สิ่งปลูกสร้าง ถนน)
+            กับ <strong>ฝนพยากรณ์</strong> จากกรมอุตุนิยมวิทยา พื้นที่ต่ำที่ฝนตกหนักจะเสี่ยงมากที่สุด
+            ส่วนรายงานบนแผนที่มาจากรูปที่ประชาชนส่งเข้ามา เป็นการประเมินเบื้องต้น ไม่ใช่ประกาศทางการ</p>
+        </details>
+      </section>
+    </div>
+
+    <!-- ================= TAB BAR -->
+    <nav class="tabbar" aria-label="เมนูหลัก">
+      <button type="button" data-tab="home" aria-current="page"><span aria-hidden="true">🏠</span>หน้าหลัก</button>
+      <button type="button" data-tab="map" class="only-mobile"><span aria-hidden="true">🗺️</span>แผนที่</button>
+      <button type="button" data-tab="report"><span aria-hidden="true">📷</span>แจ้งเหตุ</button>
+      <button type="button" data-tab="alerts"><span aria-hidden="true">🔔</span>เตือนภัย<span id="alert-dot" class="dot" hidden></span></button>
+    </nav>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
