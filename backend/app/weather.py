@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 TMD_DAILY_URL = "https://data.tmd.go.th/nwpapi/v1/forecast/location/daily/at"
 BKK = timezone(timedelta(hours=7))
-FORECAST_DAYS = 3
+FORECAST_DAYS = 10  # TMD daily forecast covers today + 9 days
 
 # TMD 24-hour rainfall criteria (mm): (upper bound, key, Thai label)
 RAIN_LEVELS = [

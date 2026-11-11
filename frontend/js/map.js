@@ -188,7 +188,8 @@ export class FloodLayers {
       `<div class="popup"><img src="${esc(r.image_url)}" alt="">` +
       `<strong>${severityText(r.score)}</strong><br>` +
       `<span class="ref">(${depthRef(r.score)})</span><br>` +
-      `${timeAgo(r.created_at)}</div>`
+      `ถ่ายเมื่อ ${new Date(r.observed_at || r.created_at).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` +
+      ` (${timeAgo(r.observed_at || r.created_at)})</div>`
     );
   }
 

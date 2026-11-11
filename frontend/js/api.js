@@ -16,14 +16,17 @@ export const api = {
   riskAt: (lat, lng) => getJSON(`/api/forecast/risk/at?lat=${lat}&lng=${lng}`),
   area: (lat, lng, hours) => getJSON(`/api/area?lat=${lat}&lng=${lng}&hours=${hours}`),
 
-  async submitReport(file, lat, lng) {
+  async submitReport(file, lat, lng, observedAt, observedSource) {
     const fd = new FormData();
     fd.append("image", file);
     fd.append("lat", lat);
     fd.append("lng", lng);
+    if (observedAt) fd.append("observed_at", observedAt);
+    if (observedSource) fd.append("observed_source", observedSource);
     const res = await fetch("/api/reports", { method: "POST", body: fd });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.detail || `ส่งไม่สำเร็จ (${res.status})`);
+    const detail = Array.isArray(body.detail) ? "ข้อมูลที่ส่งไม่ถูกต้อง" : body.detail;
+    if (!res.ok) throw new Error(detail || `ส่งไม่สำเร็จ (${res.status})`);
     return body;
   },
 };

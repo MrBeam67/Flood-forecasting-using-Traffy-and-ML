@@ -87,7 +87,7 @@
           <div class="st-detail"></div>
         </div>
 
-        <div id="home-days" class="days" aria-label="ความเสี่ยง 3 วันข้างหน้า"></div>
+        <div id="home-days" class="days" aria-label="ความเสี่ยงวันข้างหน้า (เลื่อนดูได้)"></div>
 
         <button type="button" class="btn big" data-goto="report">📷 ถ่ายรูปแจ้งน้ำท่วม</button>
         <button type="button" class="btn secondary only-mobile" data-goto="map">🗺️ ดูแผนที่ทั้งเขต</button>
@@ -113,6 +113,20 @@
             <input type="file" id="image-gallery" accept="image/*" /> เลือกจากอัลบั้ม
           </label>
           <p class="hint">ถ่ายให้เห็นระดับน้ำเทียบกับสิ่งของ เช่น ล้อรถ ขอบฟุตบาท</p>
+
+          <fieldset class="when" id="when-box" hidden>
+            <legend>ถ่ายรูปนี้เมื่อไร?</legend>
+            <p class="when-source" role="status"></p>
+            <div class="when-chips" role="group" aria-label="เลือกเวลาที่ถ่ายรูป"></div>
+            <div class="wheel" hidden>
+              <span class="wheel-band" aria-hidden="true"></span>
+              <div class="wheel-col" data-col="day" tabindex="0" role="listbox" aria-label="วันที่"></div>
+              <div class="wheel-col" data-col="hour" tabindex="0" role="listbox" aria-label="ชั่วโมง"></div>
+              <div class="wheel-col" data-col="min" tabindex="0" role="listbox" aria-label="นาที"></div>
+            </div>
+            <p class="when-summary" aria-live="polite"></p>
+          </fieldset>
+
           <p class="msg err" id="step1-msg" role="alert"></p>
           <button type="button" class="btn big" data-next>ถัดไป →</button>
         </div>
@@ -135,6 +149,7 @@
           <div class="confirm">
             <img id="confirm-img" alt="" />
             <div>
+              <div id="confirm-time"></div>
               <div id="confirm-loc"></div>
               <div class="meta">ระบบจะประเมินระดับน้ำจากรูปให้อัตโนมัติ</div>
             </div>
@@ -157,7 +172,8 @@
 
       <!-- ALERTS -->
       <section class="tab" id="tab-alerts" aria-labelledby="al-h" hidden>
-        <h2 id="al-h">เตือนภัย 3 วัน</h2>
+        <h2 id="al-h">เตือนภัยล่วงหน้า</h2>
+        <p class="hint">ตั้งแต่วันที่ 4 เป็นต้นไปเป็นแนวโน้ม ความแม่นยำต่ำกว่า 3 วันแรก</p>
         <div id="alert-list" class="alert-list"><p class="hint">กำลังโหลด…</p></div>
 
         <h3>เบอร์ฉุกเฉิน</h3>

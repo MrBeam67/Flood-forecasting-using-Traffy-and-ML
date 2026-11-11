@@ -64,7 +64,7 @@ def heat_points(rows, now=None, merge_res: int = 11) -> list[list[float]]:
     """
     best: dict[str, list[float]] = {}
     for r in rows:
-        w = r.score * decay_weight(r.created_at, now)
+        w = r.score * decay_weight(r.observed_at, now)
         key = h3.latlng_to_cell(r.lat, r.lng, merge_res)
         if key not in best or w > best[key][2]:
             best[key] = [r.lat, r.lng, w]
@@ -79,14 +79,14 @@ def hex_grid(rows, now=None) -> dict:
     """
     acc = defaultdict(lambda: {"wsum": 0.0, "wscore": 0.0, "n": 0, "max": 0.0, "latest": None})
     for r in rows:
-        w = decay_weight(r.created_at, now)
+        w = decay_weight(r.observed_at, now)
         a = acc[r.h3_cell]
         a["wsum"] += w
         a["wscore"] += w * r.score
         a["n"] += 1
         a["max"] = max(a["max"], r.score)
-        if a["latest"] is None or r.created_at > a["latest"]:
-            a["latest"] = r.created_at
+        if a["latest"] is None or r.observed_at > a["latest"]:
+            a["latest"] = r.observed_at
 
     features = []
     for cell, a in acc.items():

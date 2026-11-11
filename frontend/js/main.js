@@ -1,6 +1,7 @@
 /* global L */
 // App shell: home (my-area status), map (full-screen + sheet), report wizard, alerts.
 import { api } from "./api.js";
+import { createWhenPicker, fmtWhen, SOURCE_TEXT } from "./whenpicker.js";
 import {
   createMap, FloodLayers, SusceptLayer, SUSCEPT_CLASSES, RISK_CLASSES, TUNG_KHRU_CENTER,
   severityText, depthRef, depthFull, depthLevel, timeAgo,
@@ -39,6 +40,12 @@ function dayName(iso, i) {
 }
 const shortDate = (iso) =>
   new Date(iso + "T00:00:00+07:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+const weekdayShort = (iso) =>
+  new Date(iso + "T00:00:00+07:00").toLocaleDateString("th-TH", { weekday: "short" });
+/** "วันนี้ 11 พ.ย.", "พรุ่งนี้ 12 พ.ย.", "ศ. 13 พ.ย." */
+const dayChip = (iso, i) => `${i < 2 ? dayName(iso, i) : weekdayShort(iso)} ${shortDate(iso)}`;
+/** "วันศุกร์ 13 พ.ย." */
+const dayFull = (iso, i) => `${dayName(iso, i)} ${shortDate(iso)}`;
 const hhmm = (iso) => new Date(iso).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 const fmtLoc = ({ lat, lng }) => `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
 
@@ -138,7 +145,9 @@ async function loadForecast() {
 let mapView = 0; // forecast day index
 function renderChips() {
   const days = forecast?.days || [];
-  $("map-chips").innerHTML = days.map((d, i) => `<button type="button" class="chip" data-view="${i}">${dayName(d.date, i)}</button>`).join("");
+  $("map-chips").innerHTML = days
+    .map((d, i) => `<button type="button" class="chip" data-view="${i}">${dayChip(d.date, i)}</button>`)
+    .join("");
   syncChips();
 }
 function syncChips() {
@@ -191,14 +200,14 @@ async function setMapView(v) {
     $("grid-toggle").checked = true;
     grid.setVisible(true);
   }
-  await grid.setRisk({ ...r, title: dayName(d.date, v) });
+  await grid.setRisk({ ...r, title: dayFull(d.date, v) });
   const risky = r.counts[2] + r.counts[3];
   const riskLine = risky
     ? `พื้นที่เสี่ยงท่วม ~${risky} เฮกตาร์ · เฝ้าระวัง ~${r.counts[1]} เฮกตาร์`
     : r.counts[1] ? `ไม่มีพื้นที่เสี่ยงท่วม · เฝ้าระวัง ~${r.counts[1]} เฮกตาร์` : "ไม่มีพื้นที่เสี่ยง";
   const rl = await reportsP;
   if (seq !== viewSeq) return;
-  $("sheet-title").textContent = `${dayName(d.date, v)} · ${d.level_label} ${d.rain_max.toFixed(1)} มม.`;
+  $("sheet-title").textContent = `${dayFull(d.date, v)} · ${d.level_label} ${d.rain_max.toFixed(1)} มม.`;
   $("sheet-sub").innerHTML = `${riskLine}<br>${rl}`;
 }
 
@@ -302,8 +311,9 @@ function dayButtons(items) {
     .map(
       (d, i) => `
       <button type="button" class="day st-${d.level}" data-mapday="${i}"
-        aria-label="${dayName(d.date, i)} ${d.label} ฝน ${d.rain.toFixed(1)} มิลลิเมตร ดูบนแผนที่">
-        <span class="d-name">${dayName(d.date, i)}</span>
+        aria-label="${dayFull(d.date, i)} ${d.label} ฝน ${d.rain.toFixed(1)} มิลลิเมตร ดูบนแผนที่">
+        <span class="d-name">${i < 2 ? dayName(d.date, i) : weekdayShort(d.date)}</span>
+        <span class="d-date">${shortDate(d.date)}</span>
         <span class="d-ico" aria-hidden="true">${LEVELS[d.level].icon}</span>
         <span class="d-lv">${d.label}</span>
         <span class="d-rain">ฝน ${d.rain.toFixed(1)} มม.</span>
@@ -391,7 +401,7 @@ function renderAlerts() {
       const risky = r ? r.counts[2] + r.counts[3] : null;
       return `
       <article class="alert-item st-${lvl}">
-        <div class="ai-head"><strong>${dayName(d.date, i)} ${shortDate(d.date)}</strong>
+        <div class="ai-head"><strong>${dayFull(d.date, i)}</strong>
           <span class="ai-lv">${LEVELS[lvl].icon} ${LEVELS[lvl].label}</span></div>
         <p>${esc(d.level_label)} สูงสุด ${d.rain_max.toFixed(1)} มม.${
           risky ? ` · พื้นที่เสี่ยงท่วม ~${risky} เฮกตาร์` : ""}</p>
@@ -417,6 +427,8 @@ const wizard = (() => {
     if (n === 2) initPick();
     if (n === 3) {
       $("confirm-img").src = $("preview").src;
+      const w = readWhen();
+      $("confirm-time").textContent = w.date ? `ถ่ายเมื่อ ${fmtWhen(w.date)} (${SOURCE_TEXT[w.source]})` : "";
       $("confirm-loc").textContent = `ตำแหน่ง ${fmtLoc(loc)}`;
     }
   }
@@ -455,7 +467,15 @@ const wizard = (() => {
     $("preview").hidden = false;
     $("photo-hint").hidden = true;
     $("step1-msg").textContent = "";
+    when.setPhoto(f);
   }
+
+  // ---- when was the photo taken (EXIF -> shortcuts -> wheel), see whenpicker.js
+  const when = createWhenPicker($("when-box"));
+  when.root = $("when-box");
+  when.root.addEventListener("change", () => ($("step1-msg").textContent = ""));
+  const readWhen = () => when.read();
+  const whenError = () => when.error();
   $("image").addEventListener("change", (e) => pickFile(e.target.files[0]));
   $("image-gallery").addEventListener("change", (e) => pickFile(e.target.files[0]));
   $("pick-gps").addEventListener("click", () => useGPS(false));
@@ -464,6 +484,12 @@ const wizard = (() => {
     b.addEventListener("click", () => {
       if (step === 1) {
         if (!file) return ($("step1-msg").textContent = "ถ่ายรูปหรือเลือกรูปก่อน แล้วกดถัดไป");
+        const err = whenError();
+        if (err) {
+          $("step1-msg").textContent = err;
+          $("when-box").scrollIntoView({ block: "center", behavior: "smooth" });
+          return;
+        }
         show(2);
       } else if (step === 2) {
         const c = pickMap.getCenter();
@@ -481,7 +507,11 @@ const wizard = (() => {
     $("step3-msg").className = "msg";
     $("step3-msg").textContent = "กำลังส่งและวิเคราะห์รูป…";
     try {
-      const r = await api.submitReport(file, loc.lat.toFixed(6), loc.lng.toFixed(6));
+      const err = whenError();
+      if (err) throw new Error(err);
+      const w = readWhen();
+      const r = await api.submitReport(
+        file, loc.lat.toFixed(6), loc.lng.toFixed(6), w.date.toISOString(), w.source);
       const lvl = reportLevel(r.score);
       setStatus($("done-card"), lvl, "ส่งแล้ว ขอบคุณครับ",
         `ระบบประเมินจากรูป: <strong>${severityText(r.score)}</strong><br>(${depthRef(r.score)})<br>รายงานของคุณช่วยเตือนเพื่อนบ้านได้`, "✅");
@@ -504,6 +534,7 @@ const wizard = (() => {
   $("again").addEventListener("click", () => {
     file = null;
     loc = null;
+    when.reset();
     $("image").value = "";
     $("image-gallery").value = "";
     $("preview").hidden = true;

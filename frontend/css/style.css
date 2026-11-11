@@ -263,3 +263,34 @@ select { font: inherit; color: inherit; background: var(--bg); border: 1px solid
 .popup { font-family: "Sarabun", sans-serif; font-size: .95rem; line-height: 1.5; }
 .popup .ref { color: #555; font-size: .85rem; }
 
+/* ---- report wizard: when was the photo taken */
+.when { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px 12px; margin: 0; background: var(--card); display: flex; flex-direction: column; gap: 8px; }
+.when legend { font-weight: 700; padding: 0 4px; }
+.when-source { margin: 0; font-size: .88rem; color: var(--muted); }
+.when-source.ok { color: var(--ok); }
+.when-source.warn { color: var(--s1-fg); background: var(--s1-bg); border-radius: 8px; padding: 6px 8px; }
+.when-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.when-chips .chip { box-shadow: none; min-height: 44px; padding: 8px 14px; }
+.when-chips .chip.exif { flex-basis: 100%; text-align: left; }
+.when-summary { margin: 0; font-size: .95rem; }
+.when-summary:empty { display: none; }
+.when-summary .link { padding: 0 4px; }
+
+/* scroll wheel: day · hour · minute (rows are 36px, 5 visible) */
+.wheel { position: relative; display: grid; grid-template-columns: 2.2fr 1fr 1fr; gap: 6px; }
+.wheel-col {
+  height: 180px; overflow-y: scroll; scroll-snap-type: y mandatory; overscroll-behavior: contain;
+  background: var(--bg); border-radius: 10px; text-align: center; scrollbar-width: none; cursor: grab;
+}
+.wheel-col::-webkit-scrollbar { display: none; }
+.wheel-col div { height: 36px; line-height: 36px; scroll-snap-align: center; color: var(--muted); font-size: .9rem; white-space: nowrap; }
+.wheel-col div[aria-selected="true"] { color: var(--text); font-weight: 700; font-size: 1.05rem; }
+.wheel-band {
+  position: absolute; left: 0; right: 0; top: 72px; height: 36px; pointer-events: none; z-index: 1;
+  border-top: 2px solid var(--accent); border-bottom: 2px solid var(--accent); border-radius: 4px;
+}
+
+/* ---- 10-day strip on home: scroll sideways */
+.days { display: flex; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 4px; }
+.days .day { flex: 0 0 calc((100% - 16px) / 3); min-width: 96px; scroll-snap-align: start; }
+.day .d-date { font-size: .78rem; color: var(--muted); margin-top: -2px; }

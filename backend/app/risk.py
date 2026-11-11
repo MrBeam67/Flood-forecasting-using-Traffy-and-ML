@@ -58,8 +58,23 @@ def _nearest_point_index(points: list[dict], lat: float, lon: float) -> int:
     return min(range(len(points)), key=lambda i: (points[i]["lat"] - lat) ** 2 + (points[i]["lon"] - lon) ** 2)
 
 
+_grid_cache: dict[tuple[str, int], dict] = {}
+
+
 def risk_grid(forecast: dict, day: int) -> dict:
-    """Risk level for every grid cell on forecast day `day` (0 = today)."""
+    """Risk level for every grid cell on forecast day `day` (0 = today).
+
+    Cached per forecast fetch, since all ~3000 cells are recomputed otherwise.
+    """
+    key = (forecast["fetched_at"], day)
+    if key not in _grid_cache:
+        if any(k[0] != key[0] for k in _grid_cache):
+            _grid_cache.clear()  # a newer forecast arrived
+        _grid_cache[key] = _risk_grid(forecast, day)
+    return _grid_cache[key]
+
+
+def _risk_grid(forecast: dict, day: int) -> dict:
     pts = forecast["points"]
     ids, sus, cents, _ = _grid()
     cells: dict[int, int] = {}
