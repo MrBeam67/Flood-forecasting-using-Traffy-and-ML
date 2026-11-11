@@ -1,8 +1,9 @@
 """Flood-level classifier.
 
-Uses the YOLOv8-cls model exported to ONNX (see ml/export_onnx.py). If no model file
-exists yet, falls back to DummyClassifier so the rest of the system can be developed
-and demoed before the real model is trained.
+Uses a YOLOv8 model exported to ONNX (see ml/export_onnx.py), either a classification
+model (OnnxClassifier) or a detection model (OnnxDetector), chosen by "task" in
+flood_cls.json. If no model file exists yet, falls back to DummyClassifier so the rest
+of the system can be developed and demoed before the real model is trained.
 
 Severity score = expected value over classes:
     score = sum_i P(class_i) * level_i / (n_classes - 1)
@@ -96,6 +97,61 @@ class OnnxClassifier:
         return _to_prediction(probs, self.classes, self.version)
 
 
+class OnnxDetector:
+    """YOLOv8 detection model whose classes are water levels (none/ankle/knee/...).
+
+    Output [1, 4 + n_classes, n_anchors]. For each class we keep its best confidence over
+    all anchors (no NMS needed, we only need "is this level in the picture and how sure").
+    Classes above CONF_THRESHOLD are normalised into probabilities and the score is the
+    expected level, like the classifier. Nothing detected -> level 0, score 0.
+    """
+
+    CONF_THRESHOLD = 0.25
+
+    def __init__(self, model_path: Path, meta: dict):
+        import onnxruntime as ort
+
+        self.session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+        self.input_name = self.session.get_inputs()[0].name
+        self.imgsz = int(meta.get("imgsz", 640))
+        self.classes = list(meta["names"])
+        self.levels = [int(v) for v in meta.get("levels", range(len(self.classes)))]
+        self.version = meta.get("version", model_path.stem)
+
+    def _preprocess(self, img: Image.Image) -> np.ndarray:
+        # Ultralytics letterbox: keep aspect ratio, pad with gray (114) to imgsz x imgsz.
+        img = img.convert("RGB")
+        r = self.imgsz / max(img.size)
+        w, h = max(1, round(img.width * r)), max(1, round(img.height * r))
+        canvas = Image.new("RGB", (self.imgsz, self.imgsz), (114, 114, 114))
+        canvas.paste(img.resize((w, h), Image.BILINEAR), ((self.imgsz - w) // 2, (self.imgsz - h) // 2))
+        arr = np.asarray(canvas, dtype=np.float32) / 255.0
+        return arr.transpose(2, 0, 1)[None]
+
+    def predict(self, img: Image.Image) -> Prediction:
+        out = self.session.run(None, {self.input_name: self._preprocess(img)})[0][0]  # (4+nc, N)
+        conf = out[4:].max(axis=1).astype(np.float64)  # best confidence per class
+        probs_all = {c: round(float(p), 4) for c, p in zip(self.classes, conf)}
+
+        keep = conf >= self.CONF_THRESHOLD
+        if not keep.any():
+            base = int(np.argmin(self.levels))
+            return Prediction(self.classes[base], self.levels[base], 0.0, probs_all, self.version)
+
+        w = np.where(keep, conf, 0.0)
+        w /= w.sum()
+        max_level = max(self.levels) or 1
+        score = float(sum(p * lv / max_level for p, lv in zip(w, self.levels)))
+        top = int(np.argmax(conf))
+        return Prediction(
+            label=self.classes[top],
+            level=self.levels[top],
+            score=round(min(max(score, 0.0), 1.0), 4),
+            probs=probs_all,
+            model_version=self.version,
+        )
+
+
 class DummyClassifier:
     """Placeholder until a real model is trained.
 
@@ -114,10 +170,15 @@ class DummyClassifier:
 
 
 @lru_cache
-def get_classifier() -> OnnxClassifier | DummyClassifier:
+def get_classifier() -> OnnxClassifier | OnnxDetector | DummyClassifier:
     path = get_settings().model_path
     if path.exists():
-        log.info("Loading ONNX model from %s", path)
+        meta_file = path.with_suffix(".json")
+        meta = json.loads(meta_file.read_text(encoding="utf-8")) if meta_file.exists() else {}
+        if meta.get("task") == "detect":
+            log.info("Loading ONNX detection model from %s", path)
+            return OnnxDetector(path, meta)
+        log.info("Loading ONNX classification model from %s", path)
         return OnnxClassifier(path)
     log.warning("Model not found at %s, using DummyClassifier (predictions are fake!)", path)
     return DummyClassifier()

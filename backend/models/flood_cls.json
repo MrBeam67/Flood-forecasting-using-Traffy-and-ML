@@ -1,0 +1,21 @@
+{
+  "task": "detect",
+  "names": [
+    "none",
+    "ankle",
+    "knee",
+    "waist",
+    "neck_up",
+    "flood"
+  ],
+  "imgsz": 640,
+  "version": "yolov8n-det-20261111",
+  "levels": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    2
+  ]
+}
