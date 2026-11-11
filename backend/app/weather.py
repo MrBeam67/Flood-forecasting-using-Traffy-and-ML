@@ -8,16 +8,15 @@ token stays on the server; the frontend only sees `/api/forecast/rain`.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
 import httpx
-from shapely.geometry import shape
 
 from .config import get_settings
+from .geo import service_area
 
 log = logging.getLogger(__name__)
 
@@ -48,11 +47,8 @@ def rain_level(mm: float) -> tuple[str, str]:
 
 @lru_cache
 def sample_points() -> list[tuple[float, float]]:
-    """3x3 (lat, lon) grid over the district bbox (~2.5-3.5 km spacing)."""
-    fc = json.loads(get_settings().boundary_path.read_text(encoding="utf-8"))
-    feats = fc["features"]
-    district = next((f for f in feats if f["properties"].get("admin_level") == 6), feats[0])
-    minx, miny, maxx, maxy = shape(district["geometry"]).bounds
+    """3x3 (lat, lon) grid over the service-area bbox (~2.5-4 km spacing)."""
+    minx, miny, maxx, maxy = service_area().bounds
     steps = (0.0, 0.5, 1.0)
     return [
         (round(miny + (maxy - miny) * fy, 4), round(minx + (maxx - minx) * fx, 4))

@@ -117,3 +117,23 @@ select, input { font: inherit; color: inherit; background: var(--bg); border: 1p
   .layout { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
   .panel { overflow: visible; }
 }
+
+/* ---- forecast risk (phase 2) */
+button.rain-day { font: inherit; color: inherit; width: 100%; cursor: pointer; }
+button.rain-day:hover { border-color: var(--lc); }
+button.rain-day[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; background: var(--card); }
+.rain-alert .link {
+  font: inherit; font-weight: 600; color: inherit; background: none; border: 0; padding: 0;
+  text-decoration: underline; cursor: pointer;
+}
+.grid-mode { font-size: .82rem; margin: 8px 0 0; padding: 6px 8px; border-radius: 6px; background: var(--bg); line-height: 1.5; }
+.grid-mode[hidden] { display: none; }
+.legend.suscept.risk span { color: #3a2a00; }
+.legend.suscept.risk span:nth-child(n+3) { color: #fff; }
+.area-forecast { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.area-forecast ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.area-forecast li { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.area-forecast li > span:first-child { min-width: 64px; }
+.risk-chip { padding: 0 8px; border-radius: 99px; font-size: .8rem; background: var(--c); color: #3a2a00; }
+.muted { color: var(--muted); font-size: .8rem; }
+.risk-chip.r2, .risk-chip.r3 { color: #fff; }

@@ -28,7 +28,7 @@
           <p class="hint">กำลังโหลดพยากรณ์…</p>
         </div>
         <p id="rain-alert" class="rain-alert" hidden></p>
-        <p class="hint small">ตัวเลขใหญ่ = ปริมาณฝนสูงสุดในเขต (มม./24 ชม.) จากแบบจำลอง NWP กรมอุตุนิยมวิทยา</p>
+        <p class="hint small">กดวันเพื่อดูพื้นที่เสี่ยงท่วมคาดการณ์บนแผนที่ · ตัวเลขใหญ่ = ฝนสูงสุดในเขต (มม./24 ชม.) จากแบบจำลอง NWP กรมอุตุนิยมวิทยา</p>
       </section>
 
       <section class="card">
@@ -56,6 +56,7 @@
           <input type="checkbox" id="suscept-toggle" checked />
           พื้นที่เสี่ยงน้ำท่วม (กริด 100 ม.)
         </label>
+        <p id="grid-mode" class="grid-mode" hidden></p>
         <div id="suscept-legend" class="legend suscept"></div>
         <button id="locate" class="btn secondary">📍 บริเวณของฉันน้ำท่วมไหม?</button>
         <div id="area-result" class="area-result" hidden></div>

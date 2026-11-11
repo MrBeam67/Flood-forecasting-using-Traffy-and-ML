@@ -35,13 +35,17 @@ export function createMap(el) {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
 
-  // District + subdistrict boundaries
+  // Study area (district + risk grid, thick) + subdistrict boundaries (dashed).
+  // The OSM district line itself is hidden when a study-area outline exists.
   fetch("/static/data/tungkhru.geojson")
     .then((r) => r.json())
     .then((gj) => {
+      const hasStudy = gj.features.some((f) => f.properties.study_area);
+      const outline = (f) => f.properties.study_area || (!hasStudy && f.properties.admin_level === 6);
       const layer = L.geoJSON(gj, {
+        filter: (f) => outline(f) || f.properties.admin_level === 8,
         style: (f) =>
-          f.properties.admin_level === 6
+          outline(f)
             ? { color: "#1565c0", weight: 3, fill: false }
             : { color: "#1565c0", weight: 1, dashArray: "4 4", fill: false },
         onEachFeature: (f, l) =>
@@ -67,12 +71,47 @@ export const SUSCEPT_CLASSES = [
 const susceptClass = (s) => SUSCEPT_CLASSES.find((c) => s >= c.min);
 const fmt = (v, d = 2) => (v == null ? "–" : Number(v).toFixed(d));
 
+// Forecast risk (susceptibility x TMD rain), levels from backend/app/risk.py
+export const RISK_CLASSES = [
+  { color: "#9ed9b8", label: "ปกติ" },
+  { color: "#fdd835", label: "เฝ้าระวัง" },
+  { color: "#fb8c00", label: "เสี่ยงท่วม" },
+  { color: "#b71c1c", label: "เสี่ยงสูง" },
+];
+
 export class SusceptLayer {
   constructor(map) {
     this.map = map;
     this.layer = null;
     this.loading = null;
+    this.risk = null; // {date, cells: {id: level}} when showing a forecast day
     map.createPane("suscept").style.zIndex = 350; // below report overlays (400)
+  }
+
+  _style(f) {
+    if (this.risk) {
+      const lv = this.risk.cells[f.properties.id] || 0;
+      return { stroke: false, fillColor: RISK_CLASSES[lv].color, fillOpacity: lv ? 0.7 : 0.25 };
+    }
+    return { stroke: false, fillColor: susceptClass(f.properties.suscept).color, fillOpacity: 0.55 };
+  }
+
+  _popup(f) {
+    const p = f.properties;
+    const c = susceptClass(p.suscept);
+    let head = "";
+    if (this.risk) {
+      const r = RISK_CLASSES[this.risk.cells[p.id] || 0];
+      head = `<strong>คาดการณ์ ${this.risk.title}: ${r.label}</strong><br>`;
+    }
+    return (
+      `<div class="popup">${head}<strong>ความเสี่ยงน้ำท่วม (คงที่): ${c.label}</strong> (${fmt(p.suscept)})<br>` +
+      `ระดับพื้นดินเฉลี่ย ${fmt(p.elev_mean)} ม.<br>` +
+      `ระยะถึงคลอง ${fmt(p.canal_dist, 0)} ม.<br>` +
+      `สัดส่วนอาคาร (BCR) ${fmt(p.bcr * 100, 0)}%<br>` +
+      `ความหนาแน่นถนน ${fmt(p.road_dens, 1)}<br>` +
+      `พื้นที่น้ำ ${fmt(p.water_mean * 100, 0)}%</div>`
+    );
   }
 
   async load() {
@@ -83,23 +122,8 @@ export class SusceptLayer {
           this.layer = L.geoJSON(gj, {
             pane: "suscept",
             filter: (f) => f.properties.suscept != null,
-            style: (f) => ({
-              stroke: false,
-              fillColor: susceptClass(f.properties.suscept).color,
-              fillOpacity: 0.55,
-            }),
-            onEachFeature: (f, l) => {
-              const p = f.properties;
-              const c = susceptClass(p.suscept);
-              l.bindPopup(
-                `<div class="popup"><strong>ความเสี่ยงน้ำท่วม: ${c.label}</strong> (${fmt(p.suscept)})<br>` +
-                `ระดับพื้นดินเฉลี่ย ${fmt(p.elev_mean)} ม.<br>` +
-                `ระยะถึงคลอง ${fmt(p.canal_dist, 0)} ม.<br>` +
-                `สัดส่วนอาคาร (BCR) ${fmt(p.bcr * 100, 0)}%<br>` +
-                `ความหนาแน่นถนน ${fmt(p.road_dens, 1)}<br>` +
-                `พื้นที่น้ำ ${fmt(p.water_mean * 100, 0)}%</div>`
-              );
-            },
+            style: (f) => this._style(f),
+            onEachFeature: (f, l) => l.bindPopup(() => this._popup(f)),
           });
           return this.layer;
         });
@@ -110,6 +134,12 @@ export class SusceptLayer {
   async setVisible(on) {
     if (on) (await this.load()).addTo(this.map);
     else if (this.layer) this.map.removeLayer(this.layer);
+  }
+
+  /** Show forecast risk for one day, or null to go back to static susceptibility. */
+  async setRisk(risk) {
+    this.risk = risk;
+    (await this.load()).setStyle((f) => this._style(f));
   }
 }
 

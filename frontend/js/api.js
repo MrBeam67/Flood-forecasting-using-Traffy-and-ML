@@ -12,6 +12,8 @@ export const api = {
   hexgrid: (hours) => getJSON(`/api/hexgrid?hours=${hours}`),
   reports: (hours) => getJSON(`/api/reports?hours=${hours}`),
   rainForecast: () => getJSON("/api/forecast/rain"),
+  riskForecast: (day) => getJSON(`/api/forecast/risk?day=${day}`),
+  riskAt: (lat, lng) => getJSON(`/api/forecast/risk/at?lat=${lat}&lng=${lng}`),
   area: (lat, lng, hours) => getJSON(`/api/area?lat=${lat}&lng=${lng}&hours=${hours}`),
 
   async submitReport(file, lat, lng) {

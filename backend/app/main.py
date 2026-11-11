@@ -19,7 +19,7 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import geo, weather
+from . import geo, risk, weather
 from .config import ROOT_DIR, get_settings
 from .db import get_db
 from .inference import get_classifier
@@ -165,10 +165,32 @@ def area(
 @app.get("/api/forecast/rain")
 async def rain_forecast():
     """3-day rain forecast for the district (TMD NWP, cached server-side)."""
+    return await _forecast()
+
+
+async def _forecast() -> dict:
     try:
         return await weather.get_rain_forecast()
     except weather.ForecastUnavailable as e:
         raise HTTPException(503, str(e)) from e
+
+
+@app.get("/api/forecast/risk")
+async def risk_forecast(day: int = Query(0, ge=0, le=weather.FORECAST_DAYS - 1)):
+    """Forecast flood risk (0-3) per 100 m grid cell for one day. Level-0 cells are omitted."""
+    f = await _forecast()
+    if day >= len(f["days"]):
+        raise HTTPException(404, "ไม่มีพยากรณ์ของวันนี้")
+    return {**risk.risk_grid(f, day), "fetched_at": f["fetched_at"], "stale": f["stale"]}
+
+
+@app.get("/api/forecast/risk/at")
+async def risk_forecast_at(
+    lat: float = Query(..., ge=-90, le=90),
+    lng: float = Query(..., ge=-180, le=180),
+):
+    """Susceptibility + 3-day forecast risk for the grid cell containing (lat, lng)."""
+    return {"cell": risk.risk_at(await _forecast(), lat, lng)}
 
 
 # ---------------------------------------------------------------- static files

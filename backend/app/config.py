@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     # --- Geo ---
     boundary_path: Path = ROOT_DIR / "frontend" / "data" / "tungkhru.geojson"
+    flood_grid_path: Path = ROOT_DIR / "frontend" / "data" / "flood_grid.geojson"
     enforce_boundary: bool = True     # reject reports outside Thung Khru
     boundary_buffer_m: float = 300.0  # allow a little slack around the edge
     hex_resolution: int = 9           # H3 res 9 ≈ 0.1 km² per cell (~170 m edge)

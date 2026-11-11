@@ -17,13 +17,21 @@ DEG_PER_M = 1 / 111_320  # good enough at Bangkok's latitude for a small buffer
 
 
 @lru_cache
-def _district():
-    """Prepared polygon of the district (admin_level 6) from the boundary GeoJSON."""
-    s = get_settings()
-    fc = json.loads(s.boundary_path.read_text(encoding="utf-8"))
+def service_area():
+    """Shapely geometry of the area we serve: the study-area outline (district + risk
+    grid, see backend/scripts/build_study_area.py), else the district (admin_level 6)."""
+    fc = json.loads(get_settings().boundary_path.read_text(encoding="utf-8"))
     feats = fc["features"]
-    district = next((f for f in feats if f["properties"].get("admin_level") == 6), feats[0])
-    poly = shape(district["geometry"]).buffer(s.boundary_buffer_m * DEG_PER_M)
+    f = (next((f for f in feats if f["properties"].get("study_area")), None)
+         or next((f for f in feats if f["properties"].get("admin_level") == 6), feats[0]))
+    return shape(f["geometry"])
+
+
+@lru_cache
+def _district():
+    """Prepared service-area polygon, buffered a little for the report boundary check."""
+    s = get_settings()
+    poly = service_area().buffer(s.boundary_buffer_m * DEG_PER_M)
     return prep(poly)
 
 

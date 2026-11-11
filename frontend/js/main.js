@@ -1,6 +1,6 @@
 /* global L */
 import { api } from "./api.js";
-import { createMap, FloodLayers, SusceptLayer, SUSCEPT_CLASSES, severityText, timeAgo } from "./map.js";
+import { createMap, FloodLayers, SusceptLayer, SUSCEPT_CLASSES, RISK_CLASSES, severityText, timeAgo } from "./map.js";
 
 const $ = (id) => document.getElementById(id);
 const map = createMap("map");
@@ -8,10 +8,11 @@ const layers = new FloodLayers(map);
 
 // ---- flood susceptibility grid (from QGIS)
 const suscept = new SusceptLayer(map);
-$("suscept-legend").innerHTML = [...SUSCEPT_CLASSES]
-  .reverse()
-  .map((c) => `<span style="--c:${c.color}">${c.label}</span>`)
-  .join("");
+function setLegend(classes) {
+  $("suscept-legend").classList.toggle("risk", classes === RISK_CLASSES);
+  $("suscept-legend").innerHTML = classes.map((c) => `<span style="--c:${c.color}">${c.label}</span>`).join("");
+}
+setLegend([...SUSCEPT_CLASSES].reverse());
 const syncSuscept = () => {
   const on = $("suscept-toggle").checked;
   $("suscept-legend").hidden = !on;
@@ -27,7 +28,7 @@ api.config().then((c) => {
   b.classList.toggle("dummy", c.model_version === "dummy");
 });
 
-// ---- 3-day rain forecast (TMD)
+// ---- 3-day rain forecast (TMD) + forecast risk on the 100 m grid
 const WARN_LEVELS = new Set(["moderate", "heavy", "very_heavy"]);
 function dayName(iso, i) {
   if (i === 0) return "วันนี้";
@@ -37,18 +38,52 @@ function dayName(iso, i) {
 const shortDate = (iso) =>
   new Date(iso + "T00:00:00+07:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 
+let selectedDay = null;
+
+async function selectDay(i) {
+  selectedDay = selectedDay === i ? null : i; // click again = back to static map
+  document.querySelectorAll(".rain-day").forEach((el, k) => el.setAttribute("aria-pressed", k === selectedDay));
+  if (selectedDay === null) {
+    await suscept.setRisk(null);
+    setLegend([...SUSCEPT_CLASSES].reverse());
+    $("grid-mode").hidden = true;
+    return;
+  }
+  const day = selectedDay;
+  $("grid-mode").hidden = false;
+  $("grid-mode").textContent = "กำลังคำนวณพื้นที่เสี่ยง…";
+  try {
+    const r = await api.riskForecast(day);
+    if (selectedDay !== day) return; // user clicked something else meanwhile
+    const title = dayName(r.date, day);
+    if (!$("suscept-toggle").checked) {
+      $("suscept-toggle").checked = true;
+      syncSuscept();
+    }
+    await suscept.setRisk({ ...r, title });
+    setLegend(RISK_CLASSES);
+    const ha = r.counts[2] + r.counts[3];
+    $("grid-mode").innerHTML =
+      `แสดง: <strong>ความเสี่ยงคาดการณ์ ${title} (${shortDate(r.date)})</strong><br>` +
+      (ha ? `พื้นที่เสี่ยงท่วม ~${ha} เฮกตาร์ · เฝ้าระวัง ~${r.counts[1]} เฮกตาร์` :
+            r.counts[1] ? `ไม่มีพื้นที่เสี่ยงท่วม · เฝ้าระวัง ~${r.counts[1]} เฮกตาร์` : "ไม่มีพื้นที่เสี่ยง");
+  } catch {
+    $("grid-mode").textContent = "คำนวณพื้นที่เสี่ยงไม่สำเร็จ";
+  }
+}
+
 async function loadRain() {
   try {
     const f = await api.rainForecast();
     $("rain-days").innerHTML = f.days
       .map(
         (d, i) => `
-        <div class="rain-day lv-${d.level}">
+        <button type="button" class="rain-day lv-${d.level}" data-day="${i}" aria-pressed="${i === selectedDay}">
           <div class="rd-name">${dayName(d.date, i)}<span>${shortDate(d.date)}</span></div>
           <div class="rd-mm">${d.rain_max.toFixed(1)}<small> มม.</small></div>
           <div class="rd-level">${d.level_label}</div>
           <div class="rd-range">ทั้งเขต ${d.rain_min.toFixed(1)}–${d.rain_max.toFixed(1)}</div>
-        </div>`
+        </button>`
       )
       .join("");
     const t = new Date(f.fetched_at).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
@@ -58,9 +93,14 @@ async function loadRain() {
     $("rain-alert").hidden = warn.length === 0;
     if (warn.length) {
       const [d, i] = warn.reduce((a, b) => (b[0].rain_max > a[0].rain_max ? b : a));
-      $("rain-alert").textContent =
+      $("rain-alert").innerHTML =
         `⚠️ ${dayName(d.date, i)}คาด${d.level_label} สูงสุด ${d.rain_max.toFixed(1)} มม. ` +
-        `ระวังพื้นที่เสี่ยงสูงบนแผนที่`;
+        `<button type="button" class="link" data-day="${i}">ดูพื้นที่เสี่ยงบนแผนที่</button>`;
+    }
+    if (selectedDay !== null) {
+      const keep = selectedDay;
+      selectedDay = null;
+      await selectDay(keep); // refresh the map with the new forecast
     }
   } catch (err) {
     $("rain-days").innerHTML = `<p class="hint">ดึงพยากรณ์ฝนไม่ได้ในขณะนี้</p>`;
@@ -68,6 +108,13 @@ async function loadRain() {
     $("rain-alert").hidden = true;
   }
 }
+$("rain-card").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-day]");
+  if (!btn) return;
+  const i = Number(btn.dataset.day);
+  if (btn.classList.contains("link") && selectedDay === i) return; // already showing it
+  selectDay(i);
+});
 loadRain();
 setInterval(loadRain, 30 * 60_000);
 
@@ -148,6 +195,7 @@ $("locate").addEventListener("click", () => {
       map.setView(ll, 16);
       if (!meMarker) meMarker = L.circleMarker(ll, { radius: 8, color: "#1565c0", fillOpacity: 1 }).addTo(map);
       meMarker.setLatLng(ll);
+      const riskP = api.riskAt(ll[0], ll[1]).catch(() => null);
       try {
         const a = await api.area(ll[0], ll[1], layers.hours);
         if (!a.in_district) {
@@ -159,6 +207,17 @@ $("locate").addEventListener("click", () => {
           out.innerHTML =
             `<strong>${severityText(s.severity)}</strong><br>` +
             `ความรุนแรง ${s.severity.toFixed(2)} จาก ${s.count} รายงาน · ล่าสุด ${timeAgo(s.latest)}`;
+        }
+        const rk = (await riskP)?.cell;
+        if (a.in_district && rk) {
+          out.innerHTML +=
+            `<div class="area-forecast"><strong>พื้นที่เสี่ยง (คงที่): ${rk.suscept_label}</strong>` +
+            `<ul>${rk.days
+              .map((d, i) =>
+                `<li><span>${dayName(d.date, i)}</span>` +
+                `<span class="risk-chip r${d.risk}" style="--c:${RISK_CLASSES[d.risk].color}">${d.risk_label}</span>` +
+                `<span class="muted">ฝน ${d.rain_mm.toFixed(1)} มม.</span></li>`)
+              .join("")}</ul></div>`;
         }
       } catch {
         out.textContent = "ดึงข้อมูลไม่สำเร็จ";
