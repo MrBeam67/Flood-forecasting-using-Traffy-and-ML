@@ -20,3 +20,5 @@ services:
         value: flood-images
       - key: ENFORCE_BOUNDARY
         value: "true"
+      - key: TMD_OPENDATA       # TMD NWP API token (data.tmd.go.th/nwpapi)
+        sync: false

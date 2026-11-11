@@ -19,6 +19,18 @@
     <div id="map"></div>
 
     <aside class="panel">
+      <section class="card" id="rain-card">
+        <div class="card-head">
+          <h2>🌧️ ฝนล่วงหน้า 3 วัน</h2>
+          <span id="rain-meta" class="meta"></span>
+        </div>
+        <div id="rain-days" class="rain-days" aria-live="polite">
+          <p class="hint">กำลังโหลดพยากรณ์…</p>
+        </div>
+        <p id="rain-alert" class="rain-alert" hidden></p>
+        <p class="hint small">ตัวเลขใหญ่ = ปริมาณฝนสูงสุดในเขต (มม./24 ชม.) จากแบบจำลอง NWP กรมอุตุนิยมวิทยา</p>
+      </section>
+
       <section class="card">
         <h2>ชั้นข้อมูล</h2>
         <div class="seg" role="radiogroup" aria-label="รูปแบบแผนที่">

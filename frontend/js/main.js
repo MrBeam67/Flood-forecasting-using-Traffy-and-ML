@@ -27,6 +27,50 @@ api.config().then((c) => {
   b.classList.toggle("dummy", c.model_version === "dummy");
 });
 
+// ---- 3-day rain forecast (TMD)
+const WARN_LEVELS = new Set(["moderate", "heavy", "very_heavy"]);
+function dayName(iso, i) {
+  if (i === 0) return "วันนี้";
+  if (i === 1) return "พรุ่งนี้";
+  return new Date(iso + "T00:00:00+07:00").toLocaleDateString("th-TH", { weekday: "long" });
+}
+const shortDate = (iso) =>
+  new Date(iso + "T00:00:00+07:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+
+async function loadRain() {
+  try {
+    const f = await api.rainForecast();
+    $("rain-days").innerHTML = f.days
+      .map(
+        (d, i) => `
+        <div class="rain-day lv-${d.level}">
+          <div class="rd-name">${dayName(d.date, i)}<span>${shortDate(d.date)}</span></div>
+          <div class="rd-mm">${d.rain_max.toFixed(1)}<small> มม.</small></div>
+          <div class="rd-level">${d.level_label}</div>
+          <div class="rd-range">ทั้งเขต ${d.rain_min.toFixed(1)}–${d.rain_max.toFixed(1)}</div>
+        </div>`
+      )
+      .join("");
+    const t = new Date(f.fetched_at).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    $("rain-meta").textContent = `อัปเดต ${t}${f.stale ? " (ข้อมูลเก่า)" : ""}`;
+
+    const warn = f.days.map((d, i) => [d, i]).filter(([d]) => WARN_LEVELS.has(d.level));
+    $("rain-alert").hidden = warn.length === 0;
+    if (warn.length) {
+      const [d, i] = warn.reduce((a, b) => (b[0].rain_max > a[0].rain_max ? b : a));
+      $("rain-alert").textContent =
+        `⚠️ ${dayName(d.date, i)}คาด${d.level_label} สูงสุด ${d.rain_max.toFixed(1)} มม. ` +
+        `ระวังพื้นที่เสี่ยงสูงบนแผนที่`;
+    }
+  } catch (err) {
+    $("rain-days").innerHTML = `<p class="hint">ดึงพยากรณ์ฝนไม่ได้ในขณะนี้</p>`;
+    $("rain-meta").textContent = "";
+    $("rain-alert").hidden = true;
+  }
+}
+loadRain();
+setInterval(loadRain, 30 * 60_000);
+
 // ---- layer controls
 document.querySelectorAll('input[name="layer"]').forEach((el) =>
   el.addEventListener("change", () => layers.setMode(el.value))

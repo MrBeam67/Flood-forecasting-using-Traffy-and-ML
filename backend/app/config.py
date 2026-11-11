@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     hex_resolution: int = 9           # H3 res 9 ≈ 0.1 km² per cell (~170 m edge)
     decay_hours: float = 6.0          # weight = exp(-age_hours / decay_hours)
 
+    # --- Rain forecast (TMD NWP API, data.tmd.go.th/nwpapi) ---
+    tmd_opendata: str = ""            # access token; never sent to the browser
+    rain_cache_minutes: float = 60.0
+
     # --- Abuse protection ---
     rate_limit_per_10min: int = 20
 

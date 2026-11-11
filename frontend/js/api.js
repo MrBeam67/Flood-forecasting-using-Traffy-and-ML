@@ -11,6 +11,7 @@ export const api = {
   heatmap: (hours) => getJSON(`/api/heatmap?hours=${hours}`),
   hexgrid: (hours) => getJSON(`/api/hexgrid?hours=${hours}`),
   reports: (hours) => getJSON(`/api/reports?hours=${hours}`),
+  rainForecast: () => getJSON("/api/forecast/rain"),
   area: (lat, lng, hours) => getJSON(`/api/area?lat=${lat}&lng=${lng}&hours=${hours}`),
 
   async submitReport(file, lat, lng) {

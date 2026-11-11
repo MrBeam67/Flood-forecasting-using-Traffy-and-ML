@@ -19,7 +19,7 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import geo
+from . import geo, weather
 from .config import ROOT_DIR, get_settings
 from .db import get_db
 from .inference import get_classifier
@@ -160,6 +160,15 @@ def area(
         "in_district": geo.in_district(lat, lng),
         "summary": feats[0]["properties"] if feats else None,
     }
+
+
+@app.get("/api/forecast/rain")
+async def rain_forecast():
+    """3-day rain forecast for the district (TMD NWP, cached server-side)."""
+    try:
+        return await weather.get_rain_forecast()
+    except weather.ForecastUnavailable as e:
+        raise HTTPException(503, str(e)) from e
 
 
 # ---------------------------------------------------------------- static files
