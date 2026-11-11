@@ -183,6 +183,15 @@ export class FloodLayers {
     this.points = L.layerGroup();
   }
 
+  _popup(r) {
+    return (
+      `<div class="popup"><img src="${esc(r.image_url)}" alt="">` +
+      `<strong>${severityText(r.score)}</strong><br>` +
+      `<span class="ref">(${depthRef(r.score)})</span><br>` +
+      `${timeAgo(r.created_at)}</div>`
+    );
+  }
+
   setMode(mode) { this.mode = mode; return this.refresh(); }
   setHours(h) { this.hours = h; return this.refresh(); }
 
@@ -203,12 +212,7 @@ export class FloodLayers {
           radius: 7, weight: 1, color: "#fff",
           fillColor: severityColor(r.score), fillOpacity: 0.9,
         })
-          .bindPopup(
-            `<div class="popup"><img src="${esc(r.image_url)}" alt="">` +
-            `<strong>${severityText(r.score)}</strong><br>` +
-            `<span class="ref">(${depthRef(r.score)})</span><br>` +
-            `${timeAgo(r.created_at)}</div>`
-          )
+          .bindPopup(this._popup(r))
           .addTo(this.points);
       }
       this.points.addTo(this.map);

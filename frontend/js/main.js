@@ -90,6 +90,7 @@ map.on("arealoaded", () => (desktop.matches || app.dataset.tab === "map") && map
 const app = $("app");
 function showTab(tab) {
   if (tab === "map" && desktop.matches) return; // map is always on screen
+  if (picking && tab !== "map" && !desktop.matches) stopPicking(); // left the map: cancel
   app.dataset.tab = tab;
   document.querySelectorAll(".tabbar button").forEach((b) =>
     b.dataset.tab === tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")
@@ -249,21 +250,38 @@ $("loc-gps").addEventListener("click", async () => {
     $("loc-msg").textContent = err.message + " ลองกด \"เลือกบนแผนที่\" แทน";
   }
 });
-$("loc-pick").addEventListener("click", () => {
+// While picking a spot on the main map, hide the 100 m grid so streets are readable.
+let gridBeforePick = null;
+function startPicking() {
   picking = true;
   $("pick-hint").hidden = false;
+  gridBeforePick = $("grid-toggle").checked;
+  if (gridBeforePick) {
+    $("grid-toggle").checked = false;
+    grid.setVisible(false);
+  }
+}
+function stopPicking() {
+  picking = false;
+  $("pick-hint").hidden = true;
+  if (gridBeforePick) {
+    $("grid-toggle").checked = true;
+    grid.setVisible(true);
+  }
+  gridBeforePick = null;
+}
+$("loc-pick").addEventListener("click", () => {
+  startPicking();
   if (desktop.matches) mapShown();
   else showTab("map");
 });
 $("pick-cancel").addEventListener("click", () => {
-  picking = false;
-  $("pick-hint").hidden = true;
+  stopPicking();
   showTab("home");
 });
 map.on("click", (e) => {
   if (!picking) return;
-  picking = false;
-  $("pick-hint").hidden = true;
+  stopPicking();
   setHome({ lat: e.latlng.lat, lng: e.latlng.lng });
   showTab("home");
 });
@@ -498,6 +516,7 @@ const wizard = (() => {
 
 // ---------------------------------------------------------------- start
 showTab("home");
+reports.refresh();
 setMapView(mapView);
 loadForecast();
 setInterval(loadForecast, 30 * 60_000);
