@@ -15,12 +15,17 @@ class Settings(BaseSettings):
     # --- Database ---
     # e.g. postgresql://postgres:password@localhost:5432/flood_tungkhru
     database_url: str = "postgresql://postgres:postgres@localhost:5432/flood_tungkhru"
+    db_pool_size: int = 3
+    db_max_overflow: int = 2
 
     # --- Model ---
     # Path to the exported ONNX model. If the file is missing, a dummy model is used.
     model_path: Path = ROOT_DIR / "backend" / "models" / "flood_cls.onnx"
 
-    # --- Image storage: "local" or "supabase" ---
+    # --- Image storage: "local", "cloudinary" or "supabase" ---
+    # cloudinary://<api_key>:<api_secret>@<cloud_name>  (Cloudinary Dashboard -> API Keys)
+    cloudinary_url: str = ""
+    cloudinary_folder: str = "flood-tungkhru"
     storage_backend: str = "local"
     upload_dir: Path = ROOT_DIR / "uploads"
     supabase_url: str = ""

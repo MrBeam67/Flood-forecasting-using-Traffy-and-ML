@@ -7,10 +7,10 @@
 |---|---|
 | ML | YOLOv8-cls (ultralytics) เทรนในเครื่อง แล้ว export เป็น ONNX |
 | Backend | FastAPI + onnxruntime + SQLAlchemy/Alembic + h3 |
-| Database | PostgreSQL (ในเครื่อง / Supabase) |
-| รูปภาพ | โฟลเดอร์ `uploads/` (ในเครื่อง) / Supabase Storage |
+| Database | PostgreSQL (ในเครื่อง / Render) |
+| รูปภาพ | โฟลเดอร์ `uploads/` (ในเครื่อง) / Cloudinary |
 | Frontend | HTML + JS (ES modules) + Leaflet + leaflet.heat ไม่ต้อง build |
-| Deploy | Render (Docker) + Supabase |
+| Deploy | Render (Docker + Postgres) + Cloudinary |
 
 ```
 ├── ml/                 เทรน / ทดสอบ / export โมเดล (ใช้ในเครื่องเท่านั้น)
@@ -168,21 +168,74 @@ python ml/export_onnx.py --weights downloaded.pt  # หรือใช้โม�
 
 > ใช้โมเดล 2 คลาสได้ด้วย (`0_dry`, `1_flood`) ในกรณีนี้ score จะเท่ากับความน่าจะเป็นที่ท่วม
 
-## 4. Deploy (Render + Supabase)
+## 4. Deploy (Render + Cloudinary) ฟรีทั้งหมด
 
-1. **Supabase**: สร้างโปรเจกต์ใหม่
-   - Storage → New bucket `flood-images` ตั้งเป็น **Public**
-   - Project Settings → API: คัดลอก `Project URL` และ `service_role` key
-   - Connect → **Session pooler** URI (Render รองรับแค่ IPv4 ต้องใช้ pooler ห้ามใช้ direct connection)
-2. Commit ไฟล์ `backend/models/flood_cls.onnx` (ถ้ามีแล้ว) แล้ว push ขึ้น GitHub
-3. **Render**: New → Blueprint → เลือก repo นี้ ระบบจะอ่าน `render.yaml` ให้เอง
-   จากนั้นกรอก `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`
-4. ทุกครั้งที่ deploy ระบบจะรัน `alembic upgrade head` ให้อัตโนมัติ
+| ส่วน | อยู่ที่ |
+|---|---|
+| FastAPI + โมเดล ONNX + หน้าเว็บ | Render Web Service (Docker, free) |
+| ฐานข้อมูล Postgres | Render Postgres (free) ระบบสร้างให้จาก `render.yaml` |
+| รูปภาพ | Cloudinary (free) |
+| กันเว็บหลับ | GitHub Actions เรียก `/api/health` ทุก 10 นาที |
 
-ข้อควรรู้
-- แพ็กเกจ free ของ Render จะหลับเมื่อไม่มีคนใช้ (เปิดครั้งแรกช้าเกือบ 1 นาที) ช่วงที่ต้องนำเสนอให้เปลี่ยนเป็น Starter ชั่วคราว
-- ปุ่ม 📍 ใช้ได้เฉพาะเมื่อเปิดผ่าน https หรือ localhost
-- ทุกรูปจะถูก re-encode ใหม่ ซึ่งลบ EXIF (รวมถึงพิกัด GPS ของมือถือ) ออก และย่อขนาดให้ไม่เกิน 1280 px
+> ⚠️ **Render Postgres แบบฟรีจะหมดอายุ 30 วันหลังสร้าง** ถ้าไม่อัปเกรดข้อมูลจะถูกลบ เหมาะกับการ demo
+> ถ้าจะใช้งานยาวกว่านั้น ให้ย้ายไปใช้ Supabase ตามหัวข้อ 4.1
+
+### ขั้นที่ 1: Cloudinary
+
+1. สมัครที่ [cloudinary.com](https://cloudinary.com) (ฟรี)
+2. Dashboard → **API Keys** → คัดลอก **API environment variable** ซึ่งอยู่ในรูป
+   `cloudinary://<api_key>:<api_secret>@<cloud_name>` ค่านี้ใช้เป็น `CLOUDINARY_URL` และเป็นความลับ ห้าม commit ลง git
+
+### ขั้นที่ 2: GitHub
+
+ตรวจว่าไฟล์ `backend/models/flood_cls.onnx` และ `flood_cls.json` ถูก commit อยู่ในโปรเจกต์ แล้ว push ขึ้น GitHub
+
+### ขั้นที่ 3: Render
+
+1. [render.com](https://render.com) → **New → Blueprint** → เลือก repo นี้
+   ระบบจะอ่าน `render.yaml` แล้วสร้างให้ 2 อย่าง: database `flood-db` และ web service `flood-tungkhru`
+   (`DATABASE_URL` จะถูกใส่ให้อัตโนมัติ)
+2. กรอก `CLOUDINARY_URL` และ `TMD_OPENDATA` → **Apply**
+3. รอ build เสร็จ (ครั้งแรกใช้เวลาประมาณ 5 นาที) ทุกครั้งที่ deploy ระบบจะรัน `alembic upgrade head` ให้อัตโนมัติ
+4. เปิด `https://<ชื่อแอป>.onrender.com/api/health` ถ้าขึ้น `{"status":"ok","model":"yolov8n-det-..."}` แปลว่าใช้ได้แล้ว
+5. ลองส่งรายงาน 1 ครั้ง แล้วไปดูใน Cloudinary → Media Library → โฟลเดอร์ `flood-tungkhru` ว่ามีรูปเข้ามา
+
+### ขั้นที่ 4: กันเว็บหลับ (แนะนำ)
+
+ถ้าไม่มีคนใช้ 15 นาที แพ็กเกจฟรีของ Render จะหลับ และคนแรกที่เปิดต้องรอเกือบ 1 นาที
+GitHub repo → **Settings → Secrets and variables → Actions → Variables** → New repository variable
+`APP_URL` = `https://<ชื่อแอป>.onrender.com`
+จากนั้น workflow [`keepalive.yml`](.github/workflows/keepalive.yml) จะเรียก `/api/health` ทุก 10 นาที (บริการเดียวที่เปิดตลอดเดือนใช้ประมาณ 744 ชม. ยังอยู่ในโควตาฟรี 750 ชม./เดือนของ Render)
+ทดสอบได้ทันทีที่แท็บ Actions → keep-alive → Run workflow
+
+### เช็กลิสต์ก่อน demo
+
+- [ ] `/api/health` ตอบ `ok` และชื่อโมเดลไม่ใช่ `dummy`
+- [ ] ส่งรายงานจากมือถือได้ (ปุ่ม 📍 ใช้ได้เพราะเปิดผ่าน https)
+- [ ] พยากรณ์ฝนขึ้น (ถ้าขึ้น 503 แปลว่ายังไม่ได้ตั้ง `TMD_OPENDATA`)
+- [ ] ใส่ข้อมูลตัวอย่าง (ไม่ทำก็ได้): Render → flood-db → **Connect** → คัดลอก *External Database URL*
+      มาใส่เป็น `DATABASE_URL` ใน `.env` ชั่วคราว แล้วรัน `python -m backend.scripts.seed_demo --n 120`
+- [ ] ถ้าอยากให้เร็วที่สุดในวันนำเสนอ ให้เปลี่ยน Render เป็น Starter ($7/เดือน) แล้วเปลี่ยนกลับหลัง demo
+
+| อาการบน production | วิธีแก้ |
+|---|---|
+| Deploy fail ขึ้น `CLOUDINARY_URL ต้องอยู่ในรูป ...` | ยังไม่ได้กรอก `CLOUDINARY_URL` หรือกรอกผิดรูปแบบ |
+| ส่งรายงานแล้วขึ้น 500 | API secret ของ Cloudinary ผิด (ดู Logs ใน Render) |
+| เว็บใช้ไม่ได้หลังผ่านไป 1 เดือน | Render Postgres ฟรีหมดอายุ ให้สร้าง DB ใหม่ อัปเกรด หรือย้ายไป Supabase |
+
+### ความปลอดภัยที่ตั้งไว้แล้ว
+
+- Container รันด้วย user ทั่วไป ไม่ได้รันเป็น root และ key ทั้งหมดอยู่ใน env ของ Render เท่านั้น
+- ทุกรูปจะถูก re-encode ใหม่ ซึ่งลบ EXIF (รวมถึงพิกัด GPS) ออก และย่อขนาดให้ไม่เกิน 1280 px
+- Migration `0002` เปิด Row Level Security ไว้ (มีผลเมื่อใช้ Supabase ส่วนบน Render ไม่มีผลอะไร)
+
+### 4.1 ทางเลือก: Supabase (ไม่หมดอายุ)
+
+1. สร้างโปรเจกต์ที่ Region Singapore → SQL Editor → รัน [`supabase/01_storage.sql`](supabase/01_storage.sql)
+2. ใน `render.yaml` ลบส่วน `databases:` ออก แล้วเปลี่ยน `DATABASE_URL` เป็น `sync: false`
+   จากนั้นกรอก URI ของ **Session pooler** (ห้ามใช้ direct connection เพราะ Render ใช้ได้แค่ IPv4)
+3. ใช้รูปที่ Cloudinary ต่อไปก็ได้ หรือเปลี่ยนเป็น `STORAGE_BACKEND=supabase` แล้วกรอก `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`
+4. ถ้าไม่มีการใช้งาน 7 วัน Supabase จะพักโปรเจกต์ กันได้ด้วย [`supabase/02_keepalive.sql`](supabase/02_keepalive.sql)
 
 ## เครดิตข้อมูล
 

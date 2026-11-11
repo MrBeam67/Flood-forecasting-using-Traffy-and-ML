@@ -1,0 +1,20 @@
+# Pings the Render app so the free instance doesn't fall asleep (~1 min cold start).
+# Setup: GitHub repo -> Settings -> Secrets and variables -> Actions -> Variables
+#        -> New repository variable  APP_URL = https://<your-app>.onrender.com
+# Without APP_URL the job does nothing. GitHub may delay scheduled runs a few
+# minutes, and pauses schedules after 60 days with no commits to the repo.
+name: keep-alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /api/health
+        if: ${{ vars.APP_URL != '' }}
+        run: curl -fsS --retry 3 --retry-delay 20 --max-time 90 "${{ vars.APP_URL }}/api/health"

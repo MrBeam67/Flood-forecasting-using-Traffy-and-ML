@@ -1,24 +1,37 @@
 # Render Blueprint: https://render.com/docs/blueprint-spec
+# Setup steps: see "4. Deploy" in README.md
+#
+# Free Postgres on Render EXPIRES 30 days after it is created (then it is deleted
+# unless upgraded). Fine for a demo; for longer use see "Supabase" in README.md.
+databases:
+  - name: flood-db
+    plan: free
+    region: singapore
+    databaseName: flood_tungkhru
+    user: flood
+
 services:
   - type: web
     name: flood-tungkhru
     runtime: docker
-    plan: free            # switch to "starter" around demo day to avoid cold starts
-    region: singapore
+    plan: free            # switch to "starter" around demo day if you want zero cold starts
+    region: singapore     # same region as the database
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      - key: DATABASE_URL       # Supabase -> Connect -> Session pooler URI (IPv4)
-        sync: false
+      - key: DATABASE_URL       # filled in by Render (internal connection string)
+        fromDatabase:
+          name: flood-db
+          property: connectionString
       - key: STORAGE_BACKEND
-        value: supabase
-      - key: SUPABASE_URL
+        value: cloudinary
+      - key: CLOUDINARY_URL     # cloudinary://<api_key>:<api_secret>@<cloud_name>
         sync: false
-      - key: SUPABASE_SERVICE_KEY
-        sync: false
-      - key: SUPABASE_BUCKET
-        value: flood-images
       - key: ENFORCE_BOUNDARY
         value: "true"
+      - key: DB_POOL_SIZE
+        value: "3"
+      - key: DB_MAX_OVERFLOW
+        value: "2"
       - key: TMD_OPENDATA       # TMD NWP API token (data.tmd.go.th/nwpapi)
         sync: false

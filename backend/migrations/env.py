@@ -4,6 +4,7 @@ from pathlib import Path
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import make_url
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root
 
@@ -26,8 +27,12 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
+    url = get_settings().sqlalchemy_url
+    # Supabase transaction pooler (port 6543): no server-side prepared statements.
+    connect_args = {"prepare_threshold": None} if make_url(url).port == 6543 else {}
     engine = engine_from_config(config.get_section(config.config_ini_section, {}),
-                                prefix="sqlalchemy.", poolclass=pool.NullPool)
+                                prefix="sqlalchemy.", poolclass=pool.NullPool,
+                                connect_args=connect_args)
     with engine.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():

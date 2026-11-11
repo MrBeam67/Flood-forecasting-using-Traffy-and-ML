@@ -24,7 +24,7 @@ from .config import ROOT_DIR, get_settings
 from .db import get_db
 from .inference import get_classifier
 from .models import Report
-from .storage import sanitize_image, save_image
+from .storage import parse_cloudinary_url, sanitize_image, save_image
 
 # Windows can map .js to text/plain in the registry, which breaks ES module loading.
 mimetypes.add_type("text/javascript", ".js")
@@ -33,6 +33,8 @@ mimetypes.add_type("application/geo+json", ".geojson")
 
 logging.basicConfig(level=logging.INFO)
 settings = get_settings()
+if settings.storage_backend == "cloudinary":
+    parse_cloudinary_url(settings.cloudinary_url)  # fail at deploy, not at the first upload
 app = FastAPI(title="Thung Khru Flood Map", version="0.1.0")
 
 FRONTEND_DIR = ROOT_DIR / "frontend"
